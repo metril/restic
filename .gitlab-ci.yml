@@ -28,7 +28,8 @@ build:linux:
         - export PATH=$PATH:$HOME/.local/minio/bin/
         - mc alias set oci $OCI_API_ENDPOINT $OCI_ACCESS_KEY $OCI_SECRET_KEY
     script:
-        - go run ./helpers/build-release-binaries/main.go
+        - mkdir ./output
+        - go run ./helpers/build-release-binaries/main.go -s /builds/mirrors/restic -o /builds/mirrors/restic/output
     after_script:
         - export PATH=$PATH:$HOME/.local/minio/bin/
         - mc cp ./youtube-dl oci/gitlab-restic/restic
