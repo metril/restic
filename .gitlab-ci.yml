@@ -42,8 +42,8 @@ deploy:
     image:
         name: ghcr.io/cicirello/pyaction:latest
         entrypoint: ['']
-    dependencies:
-        - build
+    # dependencies:
+    #     - build
     before_script:
         - ARCH="$(dpkg --print-architecture)"
         - curl https://dl.min.io/client/mc/release/linux-${ARCH}/mc --create-dirs -o $HOME/.local/minio/bin/mc
