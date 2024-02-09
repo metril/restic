@@ -26,7 +26,7 @@ build:linux:
         - curl https://dl.min.io/client/mc/release/linux-${ARCH}/mc --create-dirs -o $HOME/.local/minio/bin/mc
         - chmod +x $HOME/.local/minio/bin/mc
         - export PATH=$PATH:$HOME/.local/minio/bin/
-        - apt-get update
+        - apt-get -y update
         - apt-get -y install bzip2
         - mc alias set oci $OCI_API_ENDPOINT $OCI_ACCESS_KEY $OCI_SECRET_KEY
     script:
