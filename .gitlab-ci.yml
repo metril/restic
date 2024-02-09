@@ -27,13 +27,13 @@ build:linux:
         - chmod +x $HOME/.local/minio/bin/mc
         - export PATH=$PATH:$HOME/.local/minio/bin/
         - apt-get -y update
-        - apt-get -y install bzip2
+        - apt-get -y install bzip2 zip tar gzip
         - mc alias set oci $OCI_API_ENDPOINT $OCI_ACCESS_KEY $OCI_SECRET_KEY
     script:
         - mkdir ./output
         - go run ./helpers/build-release-binaries/main.go -s /builds/mirrors/restic -o /builds/mirrors/restic/output
     after_script:
         - export PATH=$PATH:$HOME/.local/minio/bin/
-        - mc cp ./youtube-dl oci/gitlab-restic/restic
+        - mc cp --recursive ./output/ oci/gitlab-restic/
     tags:
         - githubrunner-ubuntu-${CI_PROJECT_ID}-${CI_PIPELINE_IID}
