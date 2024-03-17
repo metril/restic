@@ -651,7 +651,7 @@ func (r *Repository) LoadIndex(ctx context.Context, p *progress.Counter) error {
 
 	if p != nil {
 		var numIndexFiles uint64
-		err := indexList.List(ctx, restic.IndexFile, func(id restic.ID, size int64) error {
+		err := indexList.List(ctx, restic.IndexFile, func(_ restic.ID, _ int64) error {
 			numIndexFiles++
 			return nil
 		})
@@ -662,7 +662,7 @@ func (r *Repository) LoadIndex(ctx context.Context, p *progress.Counter) error {
 		defer p.Done()
 	}
 
-	err = index.ForAllIndexes(ctx, indexList, r, func(id restic.ID, idx *index.Index, oldFormat bool, err error) error {
+	err = index.ForAllIndexes(ctx, indexList, r, func(_ restic.ID, idx *index.Index, _ bool, err error) error {
 		if err != nil {
 			return err
 		}
@@ -1079,7 +1079,7 @@ func (b *PackBlobIterator) Next() (PackBlobValue, error) {
 
 	skipBytes := int(entry.Offset - b.currentOffset)
 	if skipBytes < 0 {
-		return PackBlobValue{}, errors.Errorf("overlapping blobs in pack %v", b.packID)
+		return PackBlobValue{}, fmt.Errorf("overlapping blobs in pack %v", b.packID)
 	}
 
 	_, err := b.rd.Discard(skipBytes)
@@ -1099,30 +1099,33 @@ func (b *PackBlobIterator) Next() (PackBlobValue, error) {
 	n, err := io.ReadFull(b.rd, b.buf)
 	if err != nil {
 		debug.Log("    read error %v", err)
-		return PackBlobValue{}, errors.Wrap(err, "ReadFull")
+		return PackBlobValue{}, fmt.Errorf("readFull: %w", err)
 	}
 
 	if n != len(b.buf) {
-		return PackBlobValue{}, errors.Errorf("read blob %v from %v: not enough bytes read, want %v, got %v",
+		return PackBlobValue{}, fmt.Errorf("read blob %v from %v: not enough bytes read, want %v, got %v",
 			h, b.packID.Str(), len(b.buf), n)
 	}
 	b.currentOffset = entry.Offset + entry.Length
 
 	if int(entry.Length) <= b.key.NonceSize() {
 		debug.Log("%v", b.blobs)
-		return PackBlobValue{}, errors.Errorf("invalid blob length %v", entry)
+		return PackBlobValue{}, fmt.Errorf("invalid blob length %v", entry)
 	}
 
 	// decryption errors are likely permanent, give the caller a chance to skip them
 	nonce, ciphertext := b.buf[:b.key.NonceSize()], b.buf[b.key.NonceSize():]
 	plaintext, err := b.key.Open(ciphertext[:0], nonce, ciphertext, nil)
+	if err != nil {
+		err = fmt.Errorf("decrypting blob %v from %v failed: %w", h, b.packID.Str(), err)
+	}
 	if err == nil && entry.IsCompressed() {
 		// DecodeAll will allocate a slice if it is not large enough since it
 		// knows the decompressed size (because we're using EncodeAll)
 		b.decode, err = b.dec.DecodeAll(plaintext, b.decode[:0])
 		plaintext = b.decode
 		if err != nil {
-			err = errors.Errorf("decompressing blob %v failed: %v", h, err)
+			err = fmt.Errorf("decompressing blob %v from %v failed: %w", h, b.packID.Str(), err)
 		}
 	}
 	if err == nil {
@@ -1130,7 +1133,7 @@ func (b *PackBlobIterator) Next() (PackBlobValue, error) {
 		if !id.Equal(entry.ID) {
 			debug.Log("read blob %v/%v from %v: wrong data returned, hash is %v",
 				h.Type, h.ID, b.packID.Str(), id)
-			err = errors.Errorf("read blob %v from %v: wrong data returned, hash is %v",
+			err = fmt.Errorf("read blob %v from %v: wrong data returned, hash is %v",
 				h, b.packID.Str(), id)
 		}
 	}
