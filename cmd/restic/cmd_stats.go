@@ -80,19 +80,11 @@ func runStats(ctx context.Context, opts StatsOptions, gopts GlobalOptions, args 
 		return err
 	}
 
-	repo, err := OpenRepository(ctx, gopts)
+	ctx, repo, unlock, err := openWithReadLock(ctx, gopts, gopts.NoLock)
 	if err != nil {
 		return err
 	}
-
-	if !gopts.NoLock {
-		var lock *restic.Lock
-		lock, ctx, err = lockRepo(ctx, repo, gopts.RetryLock, gopts.JSON)
-		defer unlockRepo(lock)
-		if err != nil {
-			return err
-		}
-	}
+	defer unlock()
 
 	snapshotLister, err := restic.MemorizeList(ctx, repo, restic.SnapshotFile)
 	if err != nil {
@@ -270,11 +262,14 @@ func statsWalkTree(repo restic.Loader, opts StatsOptions, stats *statsContainer,
 			// will still be restored
 			stats.TotalFileCount++
 
-			// if inodes are present, only count each inode once
-			// (hard links do not increase restore size)
-			if !hardLinkIndex.Has(node.Inode, node.DeviceID) || node.Inode == 0 {
-				hardLinkIndex.Add(node.Inode, node.DeviceID, struct{}{})
+			if node.Links == 1 || node.Type == "dir" {
 				stats.TotalSize += node.Size
+			} else {
+				// if hardlinks are present only count each deviceID+inode once
+				if !hardLinkIndex.Has(node.Inode, node.DeviceID) || node.Inode == 0 {
+					hardLinkIndex.Add(node.Inode, node.DeviceID, struct{}{})
+					stats.TotalSize += node.Size
+				}
 			}
 		}
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/restic/restic/internal/restic"
+	"github.com/restic/restic/internal/ui"
 	"github.com/restic/restic/internal/ui/table"
 	"github.com/spf13/cobra"
 )
@@ -58,19 +59,11 @@ func init() {
 }
 
 func runSnapshots(ctx context.Context, opts SnapshotOptions, gopts GlobalOptions, args []string) error {
-	repo, err := OpenRepository(ctx, gopts)
+	ctx, repo, unlock, err := openWithReadLock(ctx, gopts, gopts.NoLock)
 	if err != nil {
 		return err
 	}
-
-	if !gopts.NoLock {
-		var lock *restic.Lock
-		lock, ctx, err = lockRepo(ctx, repo, gopts.RetryLock, gopts.JSON)
-		defer unlockRepo(lock)
-		if err != nil {
-			return err
-		}
-	}
+	defer unlock()
 
 	var snapshots restic.Snapshots
 	for sn := range FindFilteredSnapshots(ctx, repo, repo, &opts.SnapshotFilter, args) {
@@ -163,6 +156,11 @@ func PrintSnapshots(stdout io.Writer, list restic.Snapshots, reasons []restic.Ke
 			keepReasons[*id] = reasons[i]
 		}
 	}
+	// check if any snapshot contains a summary
+	hasSize := false
+	for _, sn := range list {
+		hasSize = hasSize || (sn.Summary != nil)
+	}
 
 	// always sort the snapshots so that the newer ones are listed last
 	sort.SliceStable(list, func(i, j int) bool {
@@ -198,6 +196,9 @@ func PrintSnapshots(stdout io.Writer, list restic.Snapshots, reasons []restic.Ke
 			tab.AddColumn("Reasons", `{{ join .Reasons "\n" }}`)
 		}
 		tab.AddColumn("Paths", `{{ join .Paths "\n" }}`)
+		if hasSize {
+			tab.AddColumn("Size", `{{ .Size }}`)
+		}
 	}
 
 	type snapshot struct {
@@ -207,6 +208,7 @@ func PrintSnapshots(stdout io.Writer, list restic.Snapshots, reasons []restic.Ke
 		Tags      []string
 		Reasons   []string
 		Paths     []string
+		Size      string
 	}
 
 	var multiline bool
@@ -226,6 +228,10 @@ func PrintSnapshots(stdout io.Writer, list restic.Snapshots, reasons []restic.Ke
 
 		if len(sn.Paths) > 1 && !compact {
 			multiline = true
+		}
+
+		if sn.Summary != nil {
+			data.Size = ui.FormatBytes(sn.Summary.TotalBytesProcessed)
 		}
 
 		tab.AddRow(data)
