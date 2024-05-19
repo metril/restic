@@ -43,6 +43,7 @@ func NewFactory() location.Factory {
 }
 
 var errNotFound = fmt.Errorf("not found")
+var errTooSmall = errors.New("access beyond end of file")
 
 const connectionCount = 2
 
@@ -67,6 +68,10 @@ func New() *MemoryBackend {
 // IsNotExist returns true if the file does not exist.
 func (be *MemoryBackend) IsNotExist(err error) bool {
 	return errors.Is(err, errNotFound)
+}
+
+func (be *MemoryBackend) IsPermanentError(err error) bool {
+	return be.IsNotExist(err) || errors.Is(err, errTooSmall)
 }
 
 // Save adds new Data to the backend.
@@ -131,12 +136,12 @@ func (be *MemoryBackend) openReader(ctx context.Context, h backend.Handle, lengt
 	}
 
 	buf := be.data[h]
-	if offset > int64(len(buf)) {
-		return nil, errors.New("offset beyond end of file")
+	if offset+int64(length) > int64(len(buf)) {
+		return nil, errTooSmall
 	}
 
 	buf = buf[offset:]
-	if length > 0 && len(buf) > length {
+	if length > 0 {
 		buf = buf[:length]
 	}
 
@@ -215,11 +220,6 @@ func (be *MemoryBackend) List(ctx context.Context, t backend.FileType, fn func(b
 
 func (be *MemoryBackend) Connections() uint {
 	return connectionCount
-}
-
-// Location returns the location of the backend (RAM).
-func (be *MemoryBackend) Location() string {
-	return "RAM"
 }
 
 // Hasher may return a hash function for calculating a content hash for the backend

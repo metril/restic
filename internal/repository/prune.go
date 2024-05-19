@@ -444,7 +444,7 @@ func decidePackAction(ctx context.Context, opts PruneOptions, repo restic.Reposi
 	// This is equivalent to sorting by unused / total space.
 	// Instead of unused[i] / used[i] > unused[j] / used[j] we use
 	// unused[i] * used[j] > unused[j] * used[i] as uint32*uint32 < uint64
-	// Moreover packs containing trees and too small packs are sorted to the beginning
+	// Moreover packs containing trees and too short packs are sorted to the beginning
 	sort.Slice(repackCandidates, func(i, j int) bool {
 		pi := repackCandidates[i].packInfo
 		pj := repackCandidates[j].packInfo
@@ -621,7 +621,7 @@ func (plan *PrunePlan) Execute(ctx context.Context, printer progress.Printer) (e
 
 // deleteFiles deletes the given fileList of fileType in parallel
 // if ignoreError=true, it will print a warning if there was an error, else it will abort.
-func deleteFiles(ctx context.Context, ignoreError bool, repo restic.Repository, fileList restic.IDSet, fileType restic.FileType, printer progress.Printer) error {
+func deleteFiles(ctx context.Context, ignoreError bool, repo restic.RemoverUnpacked, fileList restic.IDSet, fileType restic.FileType, printer progress.Printer) error {
 	bar := printer.NewCounter("files deleted")
 	defer bar.Done()
 
