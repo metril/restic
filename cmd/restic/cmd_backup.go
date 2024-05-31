@@ -87,6 +87,7 @@ type BackupOptions struct {
 	DryRun            bool
 	ReadConcurrency   uint
 	NoScan            bool
+	SkipIfUnchanged   bool
 }
 
 var backupOptions BackupOptions
@@ -101,7 +102,7 @@ func init() {
 	f.StringVar(&backupOptions.Parent, "parent", "", "use this parent `snapshot` (default: latest snapshot in the group determined by --group-by and not newer than the timestamp determined by --time)")
 	backupOptions.GroupBy = restic.SnapshotGroupByOptions{Host: true, Path: true}
 	f.VarP(&backupOptions.GroupBy, "group-by", "g", "`group` snapshots by host, paths and/or tags, separated by comma (disable grouping with '')")
-	f.BoolVarP(&backupOptions.Force, "force", "f", false, `force re-reading the target files/directories (overrides the "parent" flag)`)
+	f.BoolVarP(&backupOptions.Force, "force", "f", false, `force re-reading the source files/directories (overrides the "parent" flag)`)
 
 	initExcludePatternOptions(f, &backupOptions.excludePatternOptions)
 
@@ -133,6 +134,7 @@ func init() {
 	if runtime.GOOS == "windows" {
 		f.BoolVar(&backupOptions.UseFsSnapshot, "use-fs-snapshot", false, "use filesystem snapshot where possible (currently only Windows VSS)")
 	}
+	f.BoolVar(&backupOptions.SkipIfUnchanged, "skip-if-unchanged", false, "skip snapshot creation if identical to parent snapshot")
 
 	// parse read concurrency from env, on error the default value will be used
 	readConcurrency, _ := strconv.ParseUint(os.Getenv("RESTIC_READ_CONCURRENCY"), 10, 32)
@@ -158,7 +160,7 @@ func filterExisting(items []string) (result []string, err error) {
 	}
 
 	if len(result) == 0 {
-		return nil, errors.Fatal("all target directories/files do not exist")
+		return nil, errors.Fatal("all source directories/files do not exist")
 	}
 
 	return
@@ -403,7 +405,7 @@ func collectTargets(opts BackupOptions, args []string) (targets []string, err er
 	// and have the ability to use both files-from and args at the same time.
 	targets = append(targets, args...)
 	if len(targets) == 0 && !opts.Stdin {
-		return nil, errors.Fatal("nothing to backup, please specify target files/dirs")
+		return nil, errors.Fatal("nothing to backup, please specify source files/dirs")
 	}
 
 	targets, err = filterExisting(targets)
@@ -638,13 +640,14 @@ func runBackup(ctx context.Context, opts BackupOptions, gopts GlobalOptions, ter
 	}
 
 	snapshotOpts := archiver.SnapshotOptions{
-		Excludes:       opts.Excludes,
-		Tags:           opts.Tags.Flatten(),
-		BackupStart:    backupStart,
-		Time:           timeStamp,
-		Hostname:       opts.Host,
-		ParentSnapshot: parentSnapshot,
-		ProgramVersion: "restic " + version,
+		Excludes:        opts.Excludes,
+		Tags:            opts.Tags.Flatten(),
+		BackupStart:     backupStart,
+		Time:            timeStamp,
+		Hostname:        opts.Host,
+		ParentSnapshot:  parentSnapshot,
+		ProgramVersion:  "restic " + version,
+		SkipIfUnchanged: opts.SkipIfUnchanged,
 	}
 
 	if !gopts.JSON {
@@ -665,9 +668,6 @@ func runBackup(ctx context.Context, opts BackupOptions, gopts GlobalOptions, ter
 
 	// Report finished execution
 	progressReporter.Finish(id, summary, opts.DryRun)
-	if !gopts.JSON && !opts.DryRun {
-		progressPrinter.P("snapshot %s saved\n", id.Str())
-	}
 	if !success {
 		return ErrInvalidSourceData
 	}
