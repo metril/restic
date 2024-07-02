@@ -88,7 +88,7 @@ func (node Node) restoreExtendedAttributes(path string) (err error) {
 // fill extended attributes in the node. This also includes the Generic attributes for windows.
 func (node *Node) fillExtendedAttributes(path string, _ bool) (err error) {
 	var fileHandle windows.Handle
-	if fileHandle, err = getFileHandleForEA(node.Type, path); fileHandle == 0 {
+	if fileHandle, err = fs.OpenHandleForEA(node.Type, path, false); fileHandle == 0 {
 		return nil
 	}
 	if err != nil {
@@ -118,23 +118,6 @@ func (node *Node) fillExtendedAttributes(path string, _ bool) (err error) {
 	return nil
 }
 
-// Get file handle for file or dir for setting/getting EAs
-func getFileHandleForEA(nodeType, path string) (handle windows.Handle, err error) {
-	switch nodeType {
-	case "file":
-		utf16Path := windows.StringToUTF16Ptr(path)
-		fileAccessRightReadWriteEA := (0x8 | 0x10)
-		handle, err = windows.CreateFile(utf16Path, uint32(fileAccessRightReadWriteEA), 0, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL, 0)
-	case "dir":
-		utf16Path := windows.StringToUTF16Ptr(path)
-		fileAccessRightReadWriteEA := (0x8 | 0x10)
-		handle, err = windows.CreateFile(utf16Path, uint32(fileAccessRightReadWriteEA), 0, nil, windows.OPEN_EXISTING, windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
-	default:
-		return 0, nil
-	}
-	return handle, err
-}
-
 // closeFileHandle safely closes a file handle and logs any errors.
 func closeFileHandle(fileHandle windows.Handle, path string) {
 	err := windows.CloseHandle(fileHandle)
@@ -147,13 +130,33 @@ func closeFileHandle(fileHandle windows.Handle, path string) {
 // The Windows API requires setting of all the Extended Attributes in one call.
 func restoreExtendedAttributes(nodeType, path string, eas []fs.ExtendedAttribute) (err error) {
 	var fileHandle windows.Handle
-	if fileHandle, err = getFileHandleForEA(nodeType, path); fileHandle == 0 {
+	if fileHandle, err = fs.OpenHandleForEA(nodeType, path, true); fileHandle == 0 {
 		return nil
 	}
 	if err != nil {
 		return errors.Errorf("set EA failed while opening file handle for path %v, with: %v", path, err)
 	}
 	defer closeFileHandle(fileHandle, path) // Replaced inline defer with named function call
+
+	// clear old unexpected xattrs by setting them to an empty value
+	oldEAs, err := fs.GetFileEA(fileHandle)
+	if err != nil {
+		return err
+	}
+
+	for _, oldEA := range oldEAs {
+		found := false
+		for _, ea := range eas {
+			if strings.EqualFold(ea.Name, oldEA.Name) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			eas = append(eas, fs.ExtendedAttribute{Name: oldEA.Name, Value: nil})
+		}
+	}
 
 	if err = fs.SetFileEA(fileHandle, eas); err != nil {
 		return errors.Errorf("set EA failed for path %v, with: %v", path, err)
