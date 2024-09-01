@@ -14,7 +14,6 @@ import (
 	"github.com/restic/restic/internal/backend/cache"
 	"github.com/restic/restic/internal/checker"
 	"github.com/restic/restic/internal/errors"
-	"github.com/restic/restic/internal/fs"
 	"github.com/restic/restic/internal/repository"
 	"github.com/restic/restic/internal/restic"
 	"github.com/restic/restic/internal/ui"
@@ -202,7 +201,7 @@ func prepareCheckCache(opts CheckOptions, gopts *GlobalOptions, printer progress
 	printer.P("using temporary cache in %v\n", tempdir)
 
 	cleanup = func() {
-		err := fs.RemoveAll(tempdir)
+		err := os.RemoveAll(tempdir)
 		if err != nil {
 			printer.E("error removing temporary cache directory: %v\n", err)
 		}
@@ -245,17 +244,12 @@ func runCheck(ctx context.Context, opts CheckOptions, gopts GlobalOptions, args 
 
 	errorsFound := false
 	suggestIndexRebuild := false
-	suggestLegacyIndexRebuild := false
 	mixedFound := false
 	for _, hint := range hints {
 		switch hint.(type) {
 		case *checker.ErrDuplicatePacks:
 			term.Print(hint.Error())
 			suggestIndexRebuild = true
-		case *checker.ErrOldIndexFormat:
-			printer.E("error: %v\n", hint)
-			suggestLegacyIndexRebuild = true
-			errorsFound = true
 		case *checker.ErrMixedPack:
 			term.Print(hint.Error())
 			mixedFound = true
@@ -267,9 +261,6 @@ func runCheck(ctx context.Context, opts CheckOptions, gopts GlobalOptions, args 
 
 	if suggestIndexRebuild {
 		term.Print("Duplicate packs are non-critical, you can run `restic repair index' to correct this.\n")
-	}
-	if suggestLegacyIndexRebuild {
-		printer.E("error: Found indexes using the legacy format, you must run `restic repair index' to correct this.\n")
 	}
 	if mixedFound {
 		term.Print("Mixed packs with tree and data blobs are non-critical, you can run `restic prune` to correct this.\n")
@@ -304,9 +295,6 @@ func runCheck(ctx context.Context, opts CheckOptions, gopts GlobalOptions, args 
 				errorsFound = true
 				printer.E("%v\n", err)
 			}
-		} else if err == checker.ErrLegacyLayout {
-			errorsFound = true
-			printer.E("error: repository still uses the S3 legacy layout\nYou must run `restic migrate s3legacy` to correct this.\n")
 		} else {
 			errorsFound = true
 			printer.E("%v\n", err)

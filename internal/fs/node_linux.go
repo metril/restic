@@ -1,17 +1,17 @@
-package restic
+package fs
 
 import (
+	"os"
 	"path/filepath"
 	"syscall"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/restic/restic/internal/errors"
-	"github.com/restic/restic/internal/fs"
 )
 
-func (node Node) restoreSymlinkTimestamps(path string, utimes [2]syscall.Timespec) error {
-	dir, err := fs.Open(filepath.Dir(path))
+func nodeRestoreSymlinkTimestamps(path string, utimes [2]syscall.Timespec) error {
+	dir, err := os.Open(fixpath(filepath.Dir(path)))
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -31,7 +31,3 @@ func (node Node) restoreSymlinkTimestamps(path string, utimes [2]syscall.Timespe
 
 	return dir.Close()
 }
-
-func (s statT) atim() syscall.Timespec { return s.Atim }
-func (s statT) mtim() syscall.Timespec { return s.Mtim }
-func (s statT) ctim() syscall.Timespec { return s.Ctim }

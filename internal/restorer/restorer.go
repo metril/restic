@@ -202,18 +202,18 @@ func (res *Restorer) traverseTreeInner(ctx context.Context, target, location str
 		}
 
 		// sockets cannot be restored
-		if node.Type == "socket" {
+		if node.Type == restic.NodeTypeSocket {
 			continue
 		}
 
-		selectedForRestore, childMayBeSelected := res.SelectFilter(nodeLocation, node.Type == "dir")
+		selectedForRestore, childMayBeSelected := res.SelectFilter(nodeLocation, node.Type == restic.NodeTypeDir)
 		debug.Log("SelectFilter returned %v %v for %q", selectedForRestore, childMayBeSelected, nodeLocation)
 
 		if selectedForRestore {
 			hasRestored = true
 		}
 
-		if node.Type == "dir" {
+		if node.Type == restic.NodeTypeDir {
 			if node.Subtree == nil {
 				return nil, hasRestored, errors.Errorf("Dir without subtree in tree %v", treeID.Str())
 			}
@@ -265,14 +265,14 @@ func (res *Restorer) traverseTreeInner(ctx context.Context, target, location str
 	return filenames, hasRestored, nil
 }
 
-func (res *Restorer) restoreNodeTo(ctx context.Context, node *restic.Node, target, location string) error {
+func (res *Restorer) restoreNodeTo(node *restic.Node, target, location string) error {
 	if !res.opts.DryRun {
 		debug.Log("restoreNode %v %v %v", node.Name, target, location)
 		if err := fs.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return errors.Wrap(err, "RemoveNode")
 		}
 
-		err := node.CreateAt(ctx, target, res.repo)
+		err := fs.NodeCreateAt(node, target)
 		if err != nil {
 			debug.Log("node.CreateAt(%s) error %v", target, err)
 			return err
@@ -288,7 +288,7 @@ func (res *Restorer) restoreNodeMetadataTo(node *restic.Node, target, location s
 		return nil
 	}
 	debug.Log("restoreNodeMetadata %v %v %v", node.Name, target, location)
-	err := node.RestoreMetadata(target, res.Warn)
+	err := fs.NodeRestoreMetadata(node, target, res.Warn)
 	if err != nil {
 		debug.Log("node.RestoreMetadata(%s) error %v", target, err)
 	}
@@ -377,7 +377,7 @@ func (res *Restorer) RestoreTo(ctx context.Context, dst string) (uint64, error) 
 				return err
 			}
 
-			if node.Type != "file" {
+			if node.Type != restic.NodeTypeFile {
 				res.opts.Progress.AddFile(0)
 				return nil
 			}
@@ -433,9 +433,9 @@ func (res *Restorer) RestoreTo(ctx context.Context, dst string) (uint64, error) 
 	err = res.traverseTree(ctx, dst, *res.sn.Tree, treeVisitor{
 		visitNode: func(node *restic.Node, target, location string) error {
 			debug.Log("second pass, visitNode: restore node %q", location)
-			if node.Type != "file" {
+			if node.Type != restic.NodeTypeFile {
 				_, err := res.withOverwriteCheck(ctx, node, target, location, false, nil, func(_ bool, _ *fileState) error {
-					return res.restoreNodeTo(ctx, node, target, location)
+					return res.restoreNodeTo(node, target, location)
 				})
 				return err
 			}
@@ -547,7 +547,7 @@ func (res *Restorer) withOverwriteCheck(ctx context.Context, node *restic.Node, 
 
 	var matches *fileState
 	updateMetadataOnly := false
-	if node.Type == "file" && !isHardlink {
+	if node.Type == restic.NodeTypeFile && !isHardlink {
 		// if a file fails to verify, then matches is nil which results in restoring from scratch
 		matches, buf, _ = res.verifyFile(ctx, target, node, false, res.opts.Overwrite == OverwriteIfChanged, buf)
 		// skip files that are already correct completely
@@ -616,7 +616,7 @@ func (res *Restorer) VerifyFiles(ctx context.Context, dst string, countRestoredF
 
 		err := res.traverseTree(ctx, dst, *res.sn.Tree, treeVisitor{
 			visitNode: func(node *restic.Node, target, location string) error {
-				if node.Type != "file" {
+				if node.Type != restic.NodeTypeFile {
 					return nil
 				}
 				if metadataOnly, ok := res.hasRestoredFile(location); !ok || metadataOnly {
