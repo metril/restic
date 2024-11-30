@@ -1,6 +1,7 @@
 package fs
 
 import (
+	"fmt"
 	"os"
 	"os/user"
 	"strconv"
@@ -22,11 +23,8 @@ func nodeFromFileInfo(path string, fi os.FileInfo, ignoreXattrListError bool) (*
 		return node, err
 	}
 
-	allowExtended, err := nodeFillGenericAttributes(node, path, &stat)
-	if allowExtended {
-		// Skip processing ExtendedAttributes if allowExtended is false.
-		err = errors.Join(err, nodeFillExtendedAttributes(node, path, ignoreXattrListError))
-	}
+	err := nodeFillGenericAttributes(node, path, &stat)
+	err = errors.Join(err, nodeFillExtendedAttributes(node, path, ignoreXattrListError))
 	return node, err
 }
 
@@ -296,7 +294,7 @@ func nodeRestoreTimestamps(node *restic.Node, path string) error {
 	mtime := node.ModTime.UnixNano()
 
 	if err := utimesNano(fixpath(path), atime, mtime, node.Type); err != nil {
-		return &os.PathError{Op: "UtimesNano", Path: path, Err: err}
+		return fmt.Errorf("failed to restore timestamp of %q: %w", path, err)
 	}
 	return nil
 }
