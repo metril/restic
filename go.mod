@@ -4,8 +4,8 @@ require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.16.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.8.0
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.4.0
-	github.com/Backblaze/blazer v0.6.1
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.5.0
+	github.com/Backblaze/blazer v0.7.1
 	github.com/anacrolix/fuse v0.3.1
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -19,7 +19,7 @@ require (
 	github.com/peterbourgon/unixtransport v0.0.4
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/profile v1.7.0
-	github.com/pkg/sftp v1.13.6
+	github.com/pkg/sftp v1.13.7
 	github.com/pkg/xattr v0.4.10
 	github.com/restic/chunker v0.4.0
 	github.com/spf13/cobra v1.8.1
@@ -28,10 +28,10 @@ require (
 	golang.org/x/crypto v0.28.0
 	golang.org/x/net v0.30.0
 	golang.org/x/oauth2 v0.23.0
-	golang.org/x/sync v0.8.0
-	golang.org/x/sys v0.26.0
+	golang.org/x/sync v0.9.0
+	golang.org/x/sys v0.27.0
 	golang.org/x/term v0.25.0
-	golang.org/x/text v0.19.0
+	golang.org/x/text v0.20.0
 	golang.org/x/time v0.7.0
 	google.golang.org/api v0.204.0
 )
