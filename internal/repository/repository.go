@@ -542,7 +542,7 @@ func (r *Repository) Flush(ctx context.Context) error {
 		return err
 	}
 
-	return r.idx.SaveIndex(ctx, &internalRepository{r})
+	return r.idx.Flush(ctx, &internalRepository{r})
 }
 
 func (r *Repository) StartPackUploader(ctx context.Context, wg *errgroup.Group) {
@@ -552,7 +552,7 @@ func (r *Repository) StartPackUploader(ctx context.Context, wg *errgroup.Group) 
 
 	innerWg, ctx := errgroup.WithContext(ctx)
 	r.packerWg = innerWg
-	r.uploader = newPackerUploader(ctx, innerWg, r, r.be.Connections())
+	r.uploader = newPackerUploader(ctx, innerWg, r, r.Connections())
 	r.treePM = newPackerManager(r.key, restic.TreeBlob, r.packSize(), r.uploader.QueuePacker)
 	r.dataPM = newPackerManager(r.key, restic.DataBlob, r.packSize(), r.uploader.QueuePacker)
 
@@ -587,7 +587,7 @@ func (r *Repository) flushPacks(ctx context.Context) error {
 }
 
 func (r *Repository) Connections() uint {
-	return r.be.Connections()
+	return r.be.Properties().Connections
 }
 
 func (r *Repository) LookupBlob(tpe restic.BlobType, id restic.ID) []restic.PackedBlob {
@@ -701,7 +701,9 @@ func (r *Repository) createIndexFromPacks(ctx context.Context, packsize map[rest
 				invalid = append(invalid, fi.ID)
 				m.Unlock()
 			}
-			r.idx.StorePack(fi.ID, entries)
+			if err := r.idx.StorePack(ctx, fi.ID, entries, &internalRepository{r}); err != nil {
+				return err
+			}
 			p.Add(1)
 		}
 
