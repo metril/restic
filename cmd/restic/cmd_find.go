@@ -22,6 +22,9 @@ import (
 	"github.com/restic/restic/internal/walker"
 )
 
+// errFindDone is returned from the tree walk when all requested tree IDs were found.
+var errFindDone = errors.New("find: all tree IDs found")
+
 func newFindCommand(globalOptions *global.Options) *cobra.Command {
 	var opts FindOptions
 
@@ -30,16 +33,11 @@ func newFindCommand(globalOptions *global.Options) *cobra.Command {
 		Short: "Find a file, a directory or restic IDs",
 		Long: `
 The "find" command searches for files or directories in snapshots stored in the
-repo.
-It can also be used to search for restic blobs or trees for troubleshooting.
+repository. It can also be used to search for restic blobs, trees or pack
+files for troubleshooting.
+
 The default sort option for the snapshots is youngest to oldest. To sort the
-output from oldest to youngest specify --reverse.`,
-		Example: `restic find config.json
-restic find --json "*.yml" "*.json"
-restic find --json --blob 420f620f b46ebe8a ddd38656
-restic find --show-pack-id --blob 420f620f
-restic find --tree 577c2bc9 f81f2e22 a62827a9
-restic find --pack 025c1d06
+output from oldest to youngest specify --reverse.
 
 EXIT STATUS
 ===========
@@ -50,6 +48,12 @@ Exit status is 10 if the repository does not exist.
 Exit status is 11 if the repository is already locked.
 Exit status is 12 if the password is incorrect.
 `,
+		Example: `restic find config.json
+restic find --json "*.yml" "*.json"
+restic find --json --blob 420f620f b46ebe8a ddd38656
+restic find --show-pack-id --blob 420f620f
+restic find --tree 577c2bc9 f81f2e22 a62827a9
+restic find --pack 025c1d06`,
 		GroupID:           cmdGroupDefault,
 		DisableAutoGenTag: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -160,7 +164,7 @@ func (s *statefulOutput) PrintPatternJSON(path string, node *data.Node) {
 		findNode:    (*findNode)(node),
 	})
 	if err != nil {
-		s.printer.E("Marshall failed: %v", err)
+		s.printer.E("Marshal failed: %v", err)
 		return
 	}
 	if !s.inuse {
@@ -219,7 +223,7 @@ func (s *statefulOutput) PrintObjectJSON(kind, id, nodepath, treeID string, sn *
 		Time:       sn.Time,
 	})
 	if err != nil {
-		s.printer.E("Marshall failed: %v", err)
+		s.printer.E("Marshal failed: %v", err)
 		return
 	}
 	if !s.inuse {
@@ -375,7 +379,7 @@ func (f *Finder) findTree(treeID restic.ID, nodepath string) error {
 		// looking for blobs)
 		if f.itemsFound >= len(f.treeIDs) && f.blobIDs == nil {
 			// Return an error to terminate the Walk
-			return errors.New("OK")
+			return errFindDone
 		}
 	}
 	return nil
@@ -688,7 +692,7 @@ func runFind(ctx context.Context, opts FindOptions, gopts global.Options, args [
 
 	for _, sn := range filteredSnapshots {
 		if f.blobIDs != nil || f.treeIDs != nil {
-			if err = f.findIDs(ctx, sn); err != nil && err.Error() != "OK" {
+			if err = f.findIDs(ctx, sn); err != nil && !errors.Is(err, errFindDone) {
 				return err
 			}
 			continue

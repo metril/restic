@@ -20,31 +20,63 @@ func TestSetStatus(t *testing.T) {
 		cl   = terminal.PosixControlClearLine
 		home = terminal.PosixControlMoveCursorHome
 		up   = terminal.PosixControlMoveCursorUp
+
+		clearLn = home + cl
 	)
 
 	term.SetStatus([]string{"first"})
-	exp := home + cl + "first" + home
+	exp := clearLn + "first" + home
 
 	term.SetStatus([]string{""})
-	exp += home + cl + "" + home
+	exp += clearLn + "" + home
 
 	term.SetStatus([]string{})
-	exp += home + cl + "" + home
+	exp += clearLn + "" + home
 
 	// already empty status
 	term.SetStatus([]string{})
 
 	term.SetStatus([]string{"foo", "bar", "baz"})
-	exp += home + cl + "foo\n" + home + cl + "bar\n" +
-		home + cl + "baz" + home + up + up
+	exp += clearLn + "foo\n" + clearLn + "bar\n" + clearLn + "baz" + home + up + up
 
 	term.SetStatus([]string{"quux", "needs\nquote"})
-	exp += home + cl + "quux\n" +
-		home + cl + "\"needs\\nquote\"\n" +
-		home + cl + home + up + up // Clear third line
+	exp += clearLn + "quux\n" +
+		clearLn + "\"needs\\nquote\"\n" +
+		clearLn + home + up + up // Clear third line
 
 	cancel()
-	exp += home + cl + "\n" + home + cl + home + up // Status cleared
+	exp += clearLn + "\n" + clearLn + "" + home + up // Status cleared
+
+	<-term.closed
+	rtest.Equals(t, exp, buf.String())
+}
+
+func TestSetStatusUnchangedLines(t *testing.T) {
+	buf, term, cancel := setupStatusTest()
+
+	const (
+		cl   = terminal.PosixControlClearLine
+		home = terminal.PosixControlMoveCursorHome
+		up   = terminal.PosixControlMoveCursorUp
+		down = terminal.PosixControlMoveCursorDown
+
+		clearLn  = home + cl
+		stepDown = home + down
+	)
+
+	term.SetStatus([]string{"line1", "line2", "line3"})
+	exp := clearLn + "line1\n" + clearLn + "line2\n" + clearLn + "line3" + home + up + up
+
+	term.SetStatus([]string{"line1", "line2", "line3-changed"})
+	exp += stepDown + stepDown + clearLn + "line3-changed" + home + up + up
+
+	term.SetStatus([]string{"line1", "line2", "line3-changed"})
+
+	term.SetStatus([]string{"line1", "line2-new", "line3-changed"})
+	exp += stepDown + clearLn + "line2-new\n" + home + up + up
+
+	cancel()
+	exp += clearLn + "\n" + clearLn + "\n" + clearLn + "" + home + up + up
 
 	<-term.closed
 	rtest.Equals(t, exp, buf.String())
@@ -58,6 +90,7 @@ func setupStatusTest() (*bytes.Buffer, *Terminal, context.CancelFunc) {
 	term.fd = ^uintptr(0)
 	term.clearCurrentLine = terminal.PosixClearCurrentLine
 	term.moveCursorUp = terminal.PosixMoveCursorUp
+	term.moveCursorDown = terminal.PosixMoveCursorDown
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go term.Run(ctx)
@@ -91,8 +124,8 @@ func TestSanitizeLines(t *testing.T) {
 	}{
 		{[]string{""}, 80, []string{""}},
 		{[]string{"too long test line"}, 10, []string{"too long"}},
-		{[]string{"too long test line", "text"}, 10, []string{"too long\n", "text"}},
-		{[]string{"too long test line", "second long test line"}, 10, []string{"too long\n", "second l"}},
+		{[]string{"too long test line", "text"}, 10, []string{"too long", "text"}},
+		{[]string{"too long test line", "second long test line"}, 10, []string{"too long", "second l"}},
 	}
 
 	for _, test := range tests {

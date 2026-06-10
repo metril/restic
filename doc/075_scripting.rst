@@ -19,7 +19,7 @@ when you use restic via scripts.
 
 .. _environment-variables:
 
-Environment Variables
+Environment variables
 *********************
 
 In addition to command-line options, restic supports passing various options in
@@ -42,6 +42,13 @@ environment variables, which are listed below.
     RESTIC_PACK_SIZE                    Target size for pack files
     RESTIC_READ_CONCURRENCY             Concurrency for file reads
 
+    RESTIC_FROM_REPOSITORY              Source repository for copy (replaces --from-repo)
+    RESTIC_FROM_REPOSITORY_FILE         File containing source repository for copy (replaces --from-repository-file)
+    RESTIC_FROM_PASSWORD                Password for the source repository (copy)
+    RESTIC_FROM_PASSWORD_FILE           Password file for the source repository (replaces --from-password-file)
+    RESTIC_FROM_PASSWORD_COMMAND        Command to obtain source repository password (replaces --from-password-command)
+    RESTIC_FROM_KEY_HINT                Key ID to try first when opening the source repository (replaces --from-key-hint)
+
     TMPDIR                              Location for temporary files (except Windows)
     TMP                                 Location for temporary files (only Windows)
 
@@ -54,7 +61,7 @@ environment variables, which are listed below.
     RESTIC_AWS_ASSUME_ROLE_ARN          Amazon IAM Role ARN to assume using discovered credentials
     RESTIC_AWS_ASSUME_ROLE_SESSION_NAME Session Name to use with the role assumption
     RESTIC_AWS_ASSUME_ROLE_EXTERNAL_ID  External ID to use with the role assumption
-    RESTIC_AWS_ASSUME_ROLE_POLICY       Inline Amazion IAM session policy
+    RESTIC_AWS_ASSUME_ROLE_POLICY       Inline Amazon IAM session policy
     RESTIC_AWS_ASSUME_ROLE_REGION       Region to use for IAM calls for the role assumption (default: us-east-1)
     RESTIC_AWS_ASSUME_ROLE_STS_ENDPOINT URL to the STS endpoint (default is determined based on RESTIC_AWS_ASSUME_ROLE_REGION). You generally do not need to set this, advanced use only.
 
@@ -69,6 +76,7 @@ environment variables, which are listed below.
 
     GOOGLE_PROJECT_ID                   Project ID for Google Cloud Storage
     GOOGLE_APPLICATION_CREDENTIALS      Application Credentials for Google Cloud Storage (e.g. $HOME/.config/gs-secret-restic-key.json)
+    GOOGLE_ACCESS_TOKEN                 Bearer access token for Google Cloud Storage (alternative to default application credentials)
 
     OS_AUTH_URL                         Auth URL for keystone authentication
     OS_REGION_NAME                      Region name for keystone authentication
@@ -108,8 +116,8 @@ The external programs that restic may execute include ``rclone`` (for rclone
 backends) and ``ssh`` (for the SFTP backend). These may respond to further
 environment variables and configuration files; see their respective manuals.
 
-Check if a repository is already initialized
-********************************************
+Checking if a repository is already initialized
+***********************************************
 
 You may find a need to check if a repository is already initialized,
 perhaps to prevent your script from trying to initialize a repository multiple
@@ -150,7 +158,8 @@ a more specific description.
 +-----+----------------------------------------------------+
 | 2   | Go runtime error                                   |
 +-----+----------------------------------------------------+
-| 3   | ``backup`` command could not read some source data |
+| 3   | ``backup`` could not read some source data, or     |
+|     | ``forget`` could not remove one or more snapshots  |
 +-----+----------------------------------------------------+
 | 10  | Repository does not exist (since restic 0.17.0)    |
 +-----+----------------------------------------------------+
@@ -158,7 +167,7 @@ a more specific description.
 +-----+----------------------------------------------------+
 | 12  | Wrong password (since restic 0.17.1)               |
 +-----+----------------------------------------------------+
-| 130 | Restic was interrupted using SIGINT or SIGSTOP     |
+| 130 | Command was cancelled (e.g. SIGINT or SIGTERM)     |
 +-----+----------------------------------------------------+
 
 .. _JSON output:
@@ -167,15 +176,15 @@ JSON output
 ***********
 
 Restic outputs JSON data to ``stdout`` if requested with the ``--json`` flag.
-The structure of that data varies depending on the circumstance.  The
-JSON output of most restic commands are documented here.
+The structure of that data varies depending on the circumstance. The
+JSON output of most restic commands is documented here.
 
 .. note::
     Not all commands support JSON output.  If a command does not support JSON output,
     feel free to submit a pull request!
 
 .. warning::
-    We try to keep the JSON output backwards compatible. However, new message types
+    The JSON output is intended to remain backwards compatible. However, new message types
     or fields may be added at any time. Similarly, enum-like fields for which a fixed
     list of allowed values is documented may be extended at any time.
 
@@ -277,7 +286,7 @@ These errors are printed on ``stderr``.
 | ``item``          | Usually, the path of the problematic file | string |
 +-------------------+-------------------------------------------+--------+
 
-Verbose Status
+Verbose status
 ^^^^^^^^^^^^^^
 
 Verbose status provides details about the progress, including details about backed up files.
@@ -350,18 +359,18 @@ Summary is the last output line in a successful backup.
 cat
 ---
 
-The ``cat`` command returns data about various objects in the repository, which
-are stored in JSON form. Specifying ``--json``  or ``--quiet`` will suppress any
-non-JSON messages the command generates.
-
+The ``cat`` command is used to inspect and print internal repository objects to stdout.
+This is primarily useful for debugging, understanding repository structure, or
+recovering data from a damaged repository. For details refer to the :ref:`view-repository-objects` section.
 
 check
 -----
 
 The ``check`` command uses the JSON lines format with the following message types.
+Error lines are JSON objects on stderr; when the command finishes, one JSON summary is printed on stdout.
 
-Status
-^^^^^^
+Summary
+^^^^^^^
 
 +--------------------------+------------------------------------------------------------------------------------------------+----------+
 | ``message_type``         | Always "summary"                                                                               | string   |
@@ -491,7 +500,7 @@ Match object
 +-----------------+----------------------------------------------+-------------+
 | ``links``       | Number of hardlinks                          | uint64      |
 +-----------------+----------------------------------------------+-------------+
-| ``link_target`` | Target of a symlink                          | string      |
+| ``linktarget``  | Target of a symlink                          | string      |
 +-----------------+----------------------------------------------+-------------+
 | ``uid``         | ID of owner                                  | uint32      |
 +-----------------+----------------------------------------------+-------------+
@@ -696,7 +705,7 @@ node
 +------------------+----------------------------+-------------+
 | ``mtime``        | Node modification time     | time.Time   |
 +------------------+----------------------------+-------------+
-| ``ctime``        | Node creation time         | time.Time   |
+| ``ctime``        | Node change time (ctime)   | time.Time   |
 +------------------+----------------------------+-------------+
 | ``inode``        | Inode number of node       | uint64      |
 +------------------+----------------------------+-------------+
@@ -747,11 +756,11 @@ These errors are printed on ``stderr``.
 | ``item``          | Usually, the path of the problematic file | string |
 +-------------------+-------------------------------------------+--------+
 
-Verbose Status
+Verbose status
 ^^^^^^^^^^^^^^
 
 Verbose status provides details about the progress, including details about restored files.
-Only printed if `--verbose=2` is specified.
+Only printed if ``--verbose=2`` is specified.
 
 +------------------+--------------------------------------------------------+--------+
 | ``message_type`` | Always "verbose_status"                                | string |
@@ -826,7 +835,7 @@ The snapshots command returns a single JSON array with objects of the structure 
 
 SnapshotSummary object
 
-The contained statistics reflect the information at the point64 in time when the snapshot
+The contained statistics reflect the information at the point in time when the snapshot
 was created.
 
 +---------------------------+----------------------------------------------------+-----------+

@@ -96,7 +96,6 @@ func TestPrune(t *testing.T) {
 			opts: repository.PruneOptions{
 				MaxRepackBytes: math.MaxUint64,
 				MaxUnusedBytes: func(used uint64) (unused uint64) { return math.MaxUint64 },
-				RepackSmall:    true,
 			},
 			errOnUnused: true,
 		},
@@ -134,7 +133,7 @@ func TestPruneSmall(t *testing.T) {
 
 	keep := restic.NewBlobSet()
 	rtest.OK(t, repo.WithBlobUploader(context.TODO(), func(ctx context.Context, uploader restic.BlobSaverWithAsync) error {
-		// we need a minum of 11 packfiles, each packfile will be about 5 Mb long
+		// we need a minimum of 11 packfiles, each packfile will be about 5 Mb long
 		for i := 0; i < numBlobsCreated; i++ {
 			buf := make([]byte, blobSize)
 			random.Read(buf)
@@ -160,7 +159,6 @@ func TestPruneSmall(t *testing.T) {
 		MaxRepackBytes: math.MaxUint64,
 		MaxUnusedBytes: func(used uint64) (unused uint64) { return blobSize / 4 },
 		SmallPackBytes: 5 * 1024 * 1024,
-		RepackSmall:    true,
 	}
 	plan, err := repository.PlanPrune(context.TODO(), opts, repo, func(ctx context.Context, repo restic.Repository, usedBlobs restic.FindBlobSet) error {
 		for blob := range keep {

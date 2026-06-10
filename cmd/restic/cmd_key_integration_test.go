@@ -86,6 +86,36 @@ func testRunKeyPasswd(t testing.TB, newPassword string, gopts global.Options) {
 	rtest.OK(t, err)
 }
 
+func testRunKeyPasswdUserHost(t testing.TB, newPassword string, gopts global.Options) {
+	testKeyNewPassword = newPassword
+	defer func() {
+		testKeyNewPassword = ""
+	}()
+
+	t.Log("changing password and setting key for john@example.com")
+	err := withTermStatus(t, gopts, func(ctx context.Context, gopts global.Options) error {
+		return runKeyPasswd(ctx, gopts, KeyPasswdOptions{
+			KeyAddOptions: KeyAddOptions{
+				Username: "john",
+				Hostname: "example.com",
+			},
+		}, []string{}, gopts.Term)
+	})
+	rtest.OK(t, err)
+
+	gopts.Password = testKeyNewPassword
+	_ = withTermStatus(t, gopts, func(ctx context.Context, gopts global.Options) error {
+		repo, err := global.OpenRepository(ctx, gopts, &progress.NoopPrinter{})
+		rtest.OK(t, err)
+		key, err := repository.SearchKey(ctx, repo, testKeyNewPassword, 1, "")
+		rtest.OK(t, err)
+
+		rtest.Equals(t, "john", key.Username)
+		rtest.Equals(t, "example.com", key.Hostname)
+		return nil
+	})
+}
+
 func testRunKeyRemove(t testing.TB, gopts global.Options, IDs []string) {
 	t.Logf("remove %d keys: %q\n", len(IDs), IDs)
 	for _, id := range IDs {
@@ -111,6 +141,8 @@ func TestKeyAddRemove(t *testing.T) {
 
 	testRunKeyPasswd(t, "geheim2", env.gopts)
 	env.gopts.Password = "geheim2"
+	testRunKeyPasswdUserHost(t, "geheim3", env.gopts)
+	env.gopts.Password = "geheim3"
 	t.Logf("changed password to %q", env.gopts.Password)
 
 	for _, newPassword := range passwordList {

@@ -36,8 +36,8 @@ func newMountCommand(globalOptions *global.Options) *cobra.Command {
 		Use:   "mount [flags] mountpoint",
 		Short: "Mount the repository",
 		Long: `
-The "mount" command mounts the repository via fuse over a writeable directory.
-The repository will be mounted read-only.
+The "mount" command mounts the repository read-only via FUSE at the given
+mountpoint.
 
 Snapshot Directories
 ====================
@@ -145,7 +145,7 @@ func runMount(ctx context.Context, opts MountOptions, gopts global.Options, args
 
 	err = unix.Access(mountpoint, unix.W_OK|unix.X_OK)
 	if err != nil {
-		printer.P("Mountpoint %s is not writeable or not excutable", mountpoint)
+		printer.P("Mountpoint %s is not writeable or not executable", mountpoint)
 		return errors.Fatal("inaccessible mountpoint")
 	}
 
@@ -196,12 +196,12 @@ func runMount(ctx context.Context, opts MountOptions, gopts global.Options, args
 		PathTemplates: opts.PathTemplates,
 	}
 	root := fuse.NewRoot(repo, cfg)
-
-	printer.S("Now serving the repository at %s", mountpoint)
-	printer.S("Use another terminal or tool to browse the contents of this folder.")
-	printer.S("When finished, quit with Ctrl-c here or umount the mountpoint.")
-
-	debug.Log("serving mount at %v", mountpoint)
+	// load repository before reporting the mountpoint
+	printer.S("Loading snapshots...")
+	_, err = root.ReadDirAll(ctx)
+	if err != nil {
+		return err
+	}
 
 	done := make(chan struct{})
 
@@ -209,6 +209,11 @@ func runMount(ctx context.Context, opts MountOptions, gopts global.Options, args
 		defer close(done)
 		err = fs.Serve(c, root)
 	}()
+
+	printer.S("Now serving the repository at %s", mountpoint)
+	printer.S("Use another terminal or tool to browse the contents of this folder.")
+	printer.S("When finished, quit with Ctrl-c here or umount the mountpoint.")
+	debug.Log("serving mount at %v", mountpoint)
 
 	select {
 	case <-ctx.Done():

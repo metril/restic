@@ -26,7 +26,7 @@ type Terminal struct {
 	errWriter        io.Writer
 	msg              chan message
 	status           chan status
-	lastStatusLen    int
+	lastStatus       []string
 	inputIsTerminal  bool
 	outputIsTerminal bool
 	canUpdateStatus  bool
@@ -40,6 +40,7 @@ type Terminal struct {
 
 	clearCurrentLine func(io.Writer, uintptr) error
 	moveCursorUp     func(io.Writer, uintptr, int) error
+	moveCursorDown   func(io.Writer, uintptr, int) error
 }
 
 type message struct {
@@ -123,6 +124,7 @@ func New(rd io.ReadCloser, wr io.Writer, errWriter io.Writer, disableStatus bool
 			t.fd = d.Fd()
 			t.clearCurrentLine = terminal.ClearCurrentLine(t.fd)
 			t.moveCursorUp = terminal.MoveCursorUp(t.fd)
+			t.moveCursorDown = terminal.MoveCursorDown(t.fd)
 		}
 		if terminal.OutputIsTerminal(d.Fd()) {
 			t.outputIsTerminal = true
@@ -205,12 +207,11 @@ func (t *Terminal) Run(ctx context.Context) {
 // run listens on the channels and updates the terminal screen.
 func (t *Terminal) run(ctx context.Context) {
 	var status []string
-	var lastWrittenStatus []string
 	for {
 		select {
 		case <-ctx.Done():
 			if !terminal.IsProcessBackground(t.fd) {
-				t.writeStatus([]string{})
+				t.writeStatus([]string{}, false)
 			}
 
 			return
@@ -225,7 +226,7 @@ func (t *Terminal) run(ctx context.Context) {
 				continue
 			}
 			if err := t.clearCurrentLine(t.wr, t.fd); err != nil {
-				_, _ = fmt.Fprintf(t.errWriter, "write failed: %v\n", err)
+				t.logWriteErr(err)
 				continue
 			}
 
@@ -237,12 +238,11 @@ func (t *Terminal) run(ctx context.Context) {
 			}
 
 			if _, err := io.WriteString(dst, msg.line); err != nil {
-				_, _ = fmt.Fprintf(t.errWriter, "write failed: %v\n", err)
+				t.logWriteErr(err)
 				continue
 			}
 
-			t.writeStatus(status)
-			lastWrittenStatus = append([]string{}, status...)
+			t.writeStatus(status, false)
 		case stat := <-t.status:
 			status = append(status[:0], stat.lines...)
 
@@ -251,44 +251,72 @@ func (t *Terminal) run(ctx context.Context) {
 				continue
 			}
 
-			if !slices.Equal(status, lastWrittenStatus) {
-				t.writeStatus(status)
-				// Copy the status slice to avoid aliasing
-				lastWrittenStatus = append([]string{}, status...)
-			}
+			t.writeStatus(status, true)
 		}
 	}
 }
 
-func (t *Terminal) writeStatus(status []string) {
-	statusLen := len(status)
-	status = append([]string{}, status...)
-	for i := len(status); i < t.lastStatusLen; i++ {
-		// clear no longer used status lines
-		status = append(status, "")
-		if i > 0 {
-			// all lines except the last one must have a line break
-			status[i-1] = status[i-1] + "\n"
-		}
+func (t *Terminal) logWriteErr(err error) {
+	if err != nil {
+		_, _ = fmt.Fprintf(t.errWriter, "write failed: %v\n", err)
 	}
-	t.lastStatusLen = statusLen
+}
 
-	for _, line := range status {
-		if err := t.clearCurrentLine(t.wr, t.fd); err != nil {
-			_, _ = fmt.Fprintf(t.errWriter, "write failed: %v\n", err)
+func (t *Terminal) writeStatus(status []string, skipUnchanged bool) {
+	var unchanged []bool
+	if skipUnchanged {
+		if slices.Equal(status, t.lastStatus) {
+			return
 		}
+		unchanged = findUnchangedLines(status, t.lastStatus)
+	}
+
+	lastStatusLen := len(t.lastStatus)
+	// Copy the status slice to avoid aliasing
+	t.lastStatus = append([]string{}, status...)
+
+	// Extend to clear no longer used status lines
+	status = append([]string{}, status...)
+	for i := len(status); i < lastStatusLen; i++ {
+		status = append(status, "")
+	}
+
+	for i, line := range status {
+		if unchanged != nil && i < len(unchanged) && unchanged[i] {
+			// don't write unchanged lines every frame
+			if i < len(status)-1 {
+				// just move the cursor down to the next line
+				t.logWriteErr(t.moveCursorDown(t.wr, t.fd, 1))
+			}
+			continue
+		}
+
+		t.logWriteErr(t.clearCurrentLine(t.wr, t.fd))
 
 		_, err := t.wr.Write([]byte(line))
-		if err != nil {
-			_, _ = fmt.Fprintf(t.errWriter, "write failed: %v\n", err)
+		t.logWriteErr(err)
+		// all lines except the last one must be followed by a line break
+		if i < len(status)-1 {
+			_, err := t.wr.Write([]byte("\n"))
+			t.logWriteErr(err)
 		}
 	}
 
 	if len(status) > 0 {
-		if err := t.moveCursorUp(t.wr, t.fd, len(status)-1); err != nil {
-			_, _ = fmt.Fprintf(t.errWriter, "write failed: %v\n", err)
+		t.logWriteErr(t.moveCursorUp(t.wr, t.fd, len(status)-1))
+	}
+}
+
+func findUnchangedLines(curr, last []string) []bool {
+	unchanged := make([]bool, len(curr))
+
+	for i := range min(len(curr), len(last)) {
+		if curr[i] == last[i] {
+			unchanged[i] = true
 		}
 	}
+
+	return unchanged
 }
 
 // runWithoutStatus listens on the channels and just prints out the messages,
@@ -312,17 +340,15 @@ func (t *Terminal) runWithoutStatus(ctx context.Context) {
 				dst = t.wr
 			}
 
-			if _, err := io.WriteString(dst, msg.line); err != nil {
-				_, _ = fmt.Fprintf(t.errWriter, "write failed: %v\n", err)
-			}
+			_, err := io.WriteString(dst, msg.line)
+			t.logWriteErr(err)
 
 		case stat := <-t.status:
 			if !slices.Equal(stat.lines, lastStatus) {
 				for _, line := range stat.lines {
 					// Ensure that each message ends with exactly one newline.
-					if _, err := fmt.Fprintln(t.wr, strings.TrimRight(line, "\n")); err != nil {
-						_, _ = fmt.Fprintf(t.errWriter, "write failed: %v\n", err)
-					}
+					_, err := fmt.Fprintln(t.wr, strings.TrimRight(line, "\n"))
+					t.logWriteErr(err)
 				}
 				// Copy the status slice to avoid aliasing
 				lastStatus = append([]string{}, stat.lines...)
@@ -368,18 +394,16 @@ func (t *Terminal) Error(line string) {
 }
 
 func sanitizeLines(lines []string, width int) []string {
+	sanitized := make([]string, len(lines))
 	// Sanitize lines and truncate them if they're too long.
 	for i, line := range lines {
 		line = ui.Quote(line)
 		if width > 0 {
 			line = ui.Truncate(line, width-2)
 		}
-		if i < len(lines)-1 { // Last line gets no line break.
-			line += "\n"
-		}
-		lines[i] = line
+		sanitized[i] = line
 	}
-	return lines
+	return sanitized
 }
 
 // SetStatus updates the status lines.
@@ -396,7 +420,7 @@ func (t *Terminal) SetStatus(lines []string) {
 		}
 	}
 
-	sanitizeLines(lines, width)
+	lines = sanitizeLines(lines, width)
 
 	select {
 	case t.status <- status{lines: lines}:

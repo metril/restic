@@ -20,8 +20,8 @@ func newKeyPasswdCommand(globalOptions *global.Options) *cobra.Command {
 		Use:   "passwd",
 		Short: "Change key (password); creates a new key ID and removes the old key ID, returns new key ID",
 		Long: `
-The "passwd" sub-command creates a new key, validates the key and remove the old key ID.
-Returns the new key ID. 
+The "key passwd" command creates a new key, validates the key and removes the old key ID.
+Returns the new key ID.
 
 EXIT STATUS
 ===========
@@ -71,7 +71,7 @@ func changePassword(ctx context.Context, repo *repository.Repository, gopts glob
 		return err
 	}
 
-	id, err := repository.AddKey(ctx, repo, pw, "", "", repo.Key())
+	id, err := repository.AddKey(ctx, repo, pw, opts.Username, opts.Hostname, repo.Key())
 	if err != nil {
 		return errors.Fatalf("creating new key failed: %v", err)
 	}

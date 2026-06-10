@@ -106,7 +106,7 @@ func newLocalFile(name string, flag int, metadataOnly bool) (*localFile, error) 
 	var f *os.File
 	if !metadataOnly {
 		var err error
-		f, err = os.OpenFile(fixpath(name), flag, 0)
+		f, err = os.OpenFile(fixpath(name), sanitizeFlags(flag), 0)
 		if err != nil {
 			return nil, err
 		}

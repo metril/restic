@@ -55,7 +55,10 @@ func (f *file) Attr(_ context.Context, a *fuse.Attr) error {
 	a.Size = f.node.Size
 	a.Blocks = (f.node.Size + blockSize - 1) / blockSize
 	a.BlockSize = blockSize
-	a.Nlink = uint32(f.node.Links)
+	// Windows (and other non-POSIX) backups may store a link count of 0.
+	// FUSE must still report a positive nlink so tools that validate stat()
+	// (e.g. Samba) accept the file.
+	a.Nlink = max(uint32(1), uint32(f.node.Links))
 
 	if !f.root.cfg.OwnerIsRoot {
 		a.Uid = f.node.UID

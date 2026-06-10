@@ -23,7 +23,7 @@ func newDumpCommand(globalOptions *global.Options) *cobra.Command {
 	var opts DumpOptions
 	cmd := &cobra.Command{
 		Use:   "dump [flags] snapshotID file",
-		Short: "Print a backed-up file to stdout",
+		Short: "Print backed-up files or folders to stdout",
 		Long: `
 The "dump" command extracts files from a snapshot from the repository. If a
 single file is selected, it prints its contents to stdout. Folders are output
@@ -35,7 +35,7 @@ repository.
 
 To include the folder content at the root of the archive, you can use the
 "snapshotID:subfolder" syntax, where "subfolder" is a path within the
-snapshot.
+snapshot tree as shown by "restic ls".
 
 EXIT STATUS
 ===========

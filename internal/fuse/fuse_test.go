@@ -5,6 +5,7 @@ package fuse
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"math/rand"
 	"os"
 	"strings"
@@ -274,6 +275,28 @@ func TestBlocks(t *testing.T) {
 			rtest.OK(t, err)
 			rtest.Equals(t, c.blocks, a.Blocks)
 		}
+	}
+}
+
+// Windows (and other non-POSIX) backups may store a link count of 0; FUSE
+// must still report a positive nlink so tools that validate stat() (e.g.
+// Samba) accept the file.
+func TestFileAttrNlink(t *testing.T) {
+	root := &Root{}
+	for _, tc := range []struct {
+		links uint64
+		want  uint32
+	}{
+		{0, 1},
+		{1, 1},
+		{42, 42},
+	} {
+		t.Run(fmt.Sprintf("links_%d", tc.links), func(t *testing.T) {
+			f := &file{root: root, node: &data.Node{Links: tc.links}}
+			var a fuse.Attr
+			rtest.OK(t, f.Attr(context.TODO(), &a))
+			rtest.Equals(t, tc.want, a.Nlink)
+		})
 	}
 }
 

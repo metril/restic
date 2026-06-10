@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/restic/restic/internal/checker"
 	"github.com/restic/restic/internal/crypto"
 	"github.com/restic/restic/internal/data"
@@ -15,6 +16,7 @@ import (
 	"github.com/restic/restic/internal/repository/index"
 	"github.com/restic/restic/internal/restic"
 	rtest "github.com/restic/restic/internal/test"
+	"github.com/restic/restic/internal/ui/progress"
 )
 
 func TestMasterIndex(t *testing.T) {
@@ -62,12 +64,12 @@ func TestMasterIndex(t *testing.T) {
 	}
 
 	idx1 := index.NewIndex()
-	idx1.StorePack(blob1.PackID, []restic.Blob{blob1.Blob})
-	idx1.StorePack(blob12a.PackID, []restic.Blob{blob12a.Blob})
+	idx1.StorePack(blob1.PackID, restic.Blobs{blob1.Blob})
+	idx1.StorePack(blob12a.PackID, restic.Blobs{blob12a.Blob})
 
 	idx2 := index.NewIndex()
-	idx2.StorePack(blob2.PackID, []restic.Blob{blob2.Blob})
-	idx2.StorePack(blob12b.PackID, []restic.Blob{blob12b.Blob})
+	idx2.StorePack(blob2.PackID, restic.Blobs{blob2.Blob})
+	idx2.StorePack(blob12b.PackID, restic.Blobs{blob12b.Blob})
 
 	mIdx := index.NewMasterIndex()
 	mIdx.Insert(idx1)
@@ -133,7 +135,7 @@ func TestMasterIndexAddPending(t *testing.T) {
 	// Test AddPending: try to add a blob that's already in an index (should return false)
 	bhInIndex := restic.NewRandomBlobHandle()
 	idx := index.NewIndex()
-	idx.StorePack(restic.NewRandomID(), []restic.Blob{{
+	idx.StorePack(restic.NewRandomID(), restic.Blobs{{
 		BlobHandle:         bhInIndex,
 		Length:             uint(crypto.CiphertextLength(50)),
 		Offset:             0,
@@ -178,7 +180,7 @@ func TestMasterIndexStorePackRemovesPending(t *testing.T) {
 		UncompressedLength: 75,
 	}
 	saver := &noopSaver{}
-	err := mIdx.StorePack(context.Background(), packID, []restic.Blob{blob}, saver)
+	err := mIdx.StorePack(context.Background(), packID, restic.Blobs{blob}, saver)
 	rtest.OK(t, err)
 
 	// Verify it is still found
@@ -221,10 +223,10 @@ func TestMasterMergeFinalIndexes(t *testing.T) {
 	}
 
 	idx1 := index.NewIndex()
-	idx1.StorePack(blob1.PackID, []restic.Blob{blob1.Blob})
+	idx1.StorePack(blob1.PackID, restic.Blobs{blob1.Blob})
 
 	idx2 := index.NewIndex()
-	idx2.StorePack(blob2.PackID, []restic.Blob{blob2.Blob})
+	idx2.StorePack(blob2.PackID, restic.Blobs{blob2.Blob})
 
 	mIdx := index.NewMasterIndex()
 	mIdx.Insert(idx1)
@@ -254,8 +256,8 @@ func TestMasterMergeFinalIndexes(t *testing.T) {
 
 	// merge another index containing identical blobs
 	idx3 := index.NewIndex()
-	idx3.StorePack(blob1.PackID, []restic.Blob{blob1.Blob})
-	idx3.StorePack(blob2.PackID, []restic.Blob{blob2.Blob})
+	idx3.StorePack(blob1.PackID, restic.Blobs{blob1.Blob})
+	idx3.StorePack(blob2.PackID, restic.Blobs{blob2.Blob})
 
 	mIdx.Insert(idx3)
 	finalIndexes, idxCount, newIDs := index.TestMergeIndex(t, mIdx)
@@ -296,17 +298,24 @@ func BenchmarkMasterIndexAlloc(b *testing.B) {
 	rng := rand.New(rand.NewSource(0))
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		createRandomMasterIndex(b, rng, 10000, 5)
+	}
+}
+
+func BenchmarkMasterIndexMerge(b *testing.B) {
+	rng := rand.New(rand.NewSource(0))
+	b.ReportAllocs()
+
+	for b.Loop() {
+		createRandomMasterIndex(b, rng, 1000, 1000)
 	}
 }
 
 func BenchmarkMasterIndexLookupSingleIndex(b *testing.B) {
 	mIdx, lookupBh := createRandomMasterIndex(b, rand.New(rand.NewSource(0)), 1, 200000)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		mIdx.Lookup(lookupBh)
 	}
 }
@@ -314,21 +323,16 @@ func BenchmarkMasterIndexLookupSingleIndex(b *testing.B) {
 func BenchmarkMasterIndexLookupMultipleIndex(b *testing.B) {
 	mIdx, lookupBh := createRandomMasterIndex(b, rand.New(rand.NewSource(0)), 100, 10000)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		mIdx.Lookup(lookupBh)
 	}
 }
 
 func BenchmarkMasterIndexLookupSingleIndexUnknown(b *testing.B) {
-
 	lookupBh := restic.NewRandomBlobHandle()
 	mIdx, _ := createRandomMasterIndex(b, rand.New(rand.NewSource(0)), 1, 200000)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		mIdx.Lookup(lookupBh)
 	}
 }
@@ -337,9 +341,7 @@ func BenchmarkMasterIndexLookupMultipleIndexUnknown(b *testing.B) {
 	lookupBh := restic.NewRandomBlobHandle()
 	mIdx, _ := createRandomMasterIndex(b, rand.New(rand.NewSource(0)), 100, 10000)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		mIdx.Lookup(lookupBh)
 	}
 }
@@ -378,9 +380,7 @@ func BenchmarkMasterIndexLookupBlobSize(b *testing.B) {
 	rng := rand.New(rand.NewSource(0))
 	mIdx, lookupBh := createRandomMasterIndex(b, rand.New(rng), 5, 200000)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		mIdx.LookupSize(lookupBh)
 	}
 }
@@ -389,9 +389,7 @@ func BenchmarkMasterIndexEach(b *testing.B) {
 	rng := rand.New(rand.NewSource(0))
 	mIdx, _ := createRandomMasterIndex(b, rand.New(rng), 5, 200000)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		entries := 0
 		for range mIdx.Values() {
 			entries++
@@ -402,9 +400,7 @@ func BenchmarkMasterIndexEach(b *testing.B) {
 func BenchmarkMasterIndexGC(b *testing.B) {
 	mIdx, _ := createRandomMasterIndex(b, rand.New(rand.NewSource(0)), 100, 10000)
 
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		runtime.GC()
 	}
 	runtime.KeepAlive(mIdx)
@@ -520,6 +516,50 @@ func testIndexSavePartial(t *testing.T, version uint) {
 	checker.TestCheckRepo(t, repo)
 }
 
+func loadIndexAndCollectBlobs(t *testing.T, repo restic.ListerLoaderUnpacked, master *index.MasterIndex, indexCount int) map[restic.PackedBlob]struct{} {
+	p := progress.NewCounter(0, 0, nil)
+	rtest.OK(t, master.Load(context.TODO(), repo, p, nil))
+	v, max := p.Get()
+	rtest.Equals(t, uint64(indexCount), v)
+	rtest.Equals(t, uint64(indexCount), max)
+	return collectBlobs(master)
+}
+
+func collectBlobs(master *index.MasterIndex) map[restic.PackedBlob]struct{} {
+	s := make(map[restic.PackedBlob]struct{})
+	for pb := range master.Values() {
+		s[pb] = struct{}{}
+	}
+	return s
+}
+
+func TestMasterIndexIncrementalLoad(t *testing.T) {
+	repo, _ := createFilledRepo(t, 3, restic.StableRepoVersion)
+
+	// Normal full index load
+	master1 := index.NewMasterIndex()
+	blobs1 := loadIndexAndCollectBlobs(t, repo, master1, 3)
+
+	// Noop reload should not change the index content
+	blobs1NoopLoad := loadIndexAndCollectBlobs(t, repo, master1, 0)
+	if !cmp.Equal(blobs1, blobs1NoopLoad) {
+		t.Fatalf("index content mismatch after noop reload: %v", cmp.Diff(blobs1, blobs1NoopLoad))
+	}
+
+	// Add new snapshot, which also results in a new index file
+	data.TestCreateSnapshot(t, repo, snapshotTime.Add(time.Duration(4)*time.Second), depth)
+
+	// Incremental load should only load the new index
+	blobs1IncrementalLoad := loadIndexAndCollectBlobs(t, repo, master1, 1)
+
+	// Reload index from scratch and compare with incremental load
+	master2 := index.NewMasterIndex()
+	blobs2 := loadIndexAndCollectBlobs(t, repo, master2, 4)
+	if !cmp.Equal(blobs1IncrementalLoad, blobs2) {
+		t.Fatalf("index content mismatch compared to full reload: %v", cmp.Diff(blobs1IncrementalLoad, blobs2))
+	}
+}
+
 func listPacks(t testing.TB, repo restic.Lister) restic.IDSet {
 	s := restic.NewIDSet()
 	rtest.OK(t, repo.List(context.TODO(), restic.PackFile, func(id restic.ID, _ int64) error {
@@ -548,14 +588,14 @@ func TestRewriteOversizedIndex(t *testing.T) {
 		return idx.Len(restic.DataBlob) > 2*fullIndexCount
 	}
 
-	var blobs []restic.Blob
+	var blobs restic.Blobs
 
 	// build oversized index
 	idx := index.NewIndex()
 	numPacks := 5
 	for p := 0; p < numPacks; p++ {
 		packID := restic.NewRandomID()
-		packBlobs := make([]restic.Blob, 0, fullIndexCount)
+		packBlobs := make(restic.Blobs, 0, fullIndexCount)
 
 		for i := 0; i < fullIndexCount; i++ {
 			blob := restic.Blob{
@@ -596,4 +636,61 @@ func TestRewriteOversizedIndex(t *testing.T) {
 	// check that multiple indexes were created
 	ids := mi2.IDs()
 	rtest.Assert(t, len(ids) > 1, "oversized index was not split into multiple indexes")
+}
+
+func TestRewriteSplitPacks(t *testing.T) {
+	repo, unpacked, _ := repository.TestRepositoryWithVersion(t, restic.StableRepoVersion)
+
+	bh1 := restic.NewRandomBlobHandle()
+	bh2 := restic.NewRandomBlobHandle()
+	bhOther := restic.NewRandomBlobHandle()
+
+	blob1 := restic.PackedBlob{
+		PackID: restic.NewRandomID(),
+		Blob: restic.Blob{
+			BlobHandle: bh1,
+			Length:     uint(crypto.CiphertextLength(10)),
+			Offset:     0,
+		},
+	}
+	blob2 := restic.PackedBlob{
+		PackID: blob1.PackID,
+		Blob: restic.Blob{
+			BlobHandle:         bh2,
+			Length:             uint(crypto.CiphertextLength(100)),
+			Offset:             10,
+			UncompressedLength: 200,
+		},
+	}
+	// used to force index repacking
+	blobOther := restic.PackedBlob{
+		PackID: restic.NewRandomID(),
+		Blob: restic.Blob{
+			BlobHandle: bhOther,
+			Length:     uint(crypto.CiphertextLength(100)),
+			Offset:     10,
+		},
+	}
+
+	mi := index.NewMasterIndex()
+	rtest.OK(t, mi.StorePack(context.TODO(), blob1.PackID, restic.Blobs{blob1.Blob}, unpacked))
+	rtest.OK(t, mi.StorePack(context.TODO(), blobOther.PackID, restic.Blobs{blobOther.Blob}, unpacked))
+	rtest.OK(t, mi.Flush(context.TODO(), unpacked))
+	rtest.OK(t, mi.StorePack(context.TODO(), blob2.PackID, restic.Blobs{blob2.Blob}, unpacked))
+	rtest.OK(t, mi.StorePack(context.TODO(), blobOther.PackID, restic.Blobs{blobOther.Blob}, unpacked))
+	rtest.OK(t, mi.Flush(context.TODO(), unpacked))
+
+	rtest.OK(t, mi.Rewrite(context.TODO(), unpacked, restic.NewIDSet(blobOther.PackID), nil, nil, index.MasterIndexRewriteOpts{}))
+
+	mi = index.NewMasterIndex()
+	rtest.OK(t, mi.Load(context.TODO(), repo, nil, nil))
+
+	// test that all blobs are still in the index
+	for _, blob := range []restic.PackedBlob{blob1, blob2} {
+		blobs := mi.Lookup(blob.BlobHandle)
+		rtest.Equals(t, []restic.PackedBlob{blob}, blobs)
+	}
+
+	blobs := mi.Lookup(blobOther.BlobHandle)
+	rtest.Equals(t, nil, blobs)
 }

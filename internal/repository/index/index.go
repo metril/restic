@@ -3,10 +3,13 @@ package index
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"io"
 	"iter"
 	"math"
+	"slices"
 	"sync"
 	"time"
 
@@ -132,9 +135,18 @@ var Oversized = func(idx *Index) bool {
 	return blobs >= indexMaxBlobs+pack.MaxHeaderEntries
 }
 
+// Preallocate preallocates space for the given blob type.
+// This is used to avoid reallocations when adding a large number of blobs to the index.
+func (idx *Index) Preallocate(t restic.BlobType, numEntries int) {
+	idx.m.Lock()
+	defer idx.m.Unlock()
+
+	idx.byType[t].preallocate(numEntries)
+}
+
 // StorePack remembers the ids of all blobs of a given pack
 // in the index
-func (idx *Index) StorePack(id restic.ID, blobs []restic.Blob) {
+func (idx *Index) StorePack(id restic.ID, blobs restic.Blobs) {
 	idx.m.Lock()
 	defer idx.m.Unlock()
 
@@ -219,11 +231,6 @@ func (idx *Index) Values() iter.Seq[restic.PackedBlob] {
 	}
 }
 
-type EachByPackResult struct {
-	PackID restic.ID
-	Blobs  []restic.Blob
-}
-
 // EachByPack returns a channel that yields all blobs known to the index
 // grouped by packID but ignoring blobs with a packID in packPlacklist for
 // finalized indexes.
@@ -231,10 +238,10 @@ type EachByPackResult struct {
 // from the finalized index which have been re-read into a non-finalized index.
 // When the  context is cancelled, the background goroutine
 // terminates. This blocks any modification of the index.
-func (idx *Index) EachByPack(ctx context.Context, packBlacklist restic.IDSet) <-chan EachByPackResult {
+func (idx *Index) EachByPack(ctx context.Context, packBlacklist restic.IDSet) <-chan restic.PackBlobs {
 	idx.m.RLock()
 
-	ch := make(chan EachByPackResult)
+	ch := make(chan restic.PackBlobs)
 
 	go func() {
 		defer idx.m.RUnlock()
@@ -255,7 +262,7 @@ func (idx *Index) EachByPack(ctx context.Context, packBlacklist restic.IDSet) <-
 		}
 
 		for packID, packByType := range byPack {
-			var result EachByPackResult
+			var result restic.PackBlobs
 			result.PackID = packID
 			for typ, p := range packByType {
 				for _, e := range p {
@@ -541,4 +548,22 @@ func (idx *Index) Len(t restic.BlobType) uint {
 	defer idx.m.RUnlock()
 
 	return idx.byType[t].len()
+}
+
+func PackBlobsHash(pbs restic.PackBlobs) restic.ID {
+	h := sha256.New()
+	h.Write(pbs.PackID[:])
+
+	sortedBlobs := slices.Clone(pbs.Blobs)
+	sortedBlobs.Sort()
+	for _, blob := range sortedBlobs {
+		h.Write(blob.ID[:])
+		buf := make([]byte, 0, 16)
+		buf = binary.LittleEndian.AppendUint32(buf, uint32(blob.Type))
+		buf = binary.LittleEndian.AppendUint32(buf, uint32(blob.Offset))
+		buf = binary.LittleEndian.AppendUint32(buf, uint32(blob.Length))
+		buf = binary.LittleEndian.AppendUint32(buf, uint32(blob.UncompressedLength))
+		h.Write(buf)
+	}
+	return restic.ID(h.Sum(nil))
 }
