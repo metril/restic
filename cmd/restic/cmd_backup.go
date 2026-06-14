@@ -533,8 +533,7 @@ func runBackup(ctx context.Context, opts BackupOptions, gopts global.Options, te
 	}
 	defer unlock()
 
-	progressReporter := backup.NewProgress(printer,
-		ui.CalculateProgressInterval(!gopts.Quiet, gopts.JSON, term.CanUpdateStatus()))
+	progressReporter := backup.NewProgress(printer, gopts.Quiet, gopts.JSON, term.CanUpdateStatus())
 	defer progressReporter.Done()
 
 	// rejectByNameFuncs collect functions that can reject items from the backup based on path only
@@ -568,7 +567,7 @@ func runBackup(ctx context.Context, opts BackupOptions, gopts global.Options, te
 		return err
 	}
 
-	var targetFS fs.FS = fs.Local{}
+	targetFS := fs.NewLocal()
 	if runtime.GOOS == "windows" && opts.UseFsSnapshot {
 		if err = fs.HasSufficientPrivilegesForVSS(); err != nil {
 			return err

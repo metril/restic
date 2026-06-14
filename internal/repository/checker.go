@@ -16,7 +16,6 @@ import (
 	"github.com/restic/restic/internal/repository/index"
 	"github.com/restic/restic/internal/repository/pack"
 	"github.com/restic/restic/internal/restic"
-	"github.com/restic/restic/internal/ui/progress"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -79,24 +78,26 @@ type Checker struct {
 	repo *Repository
 }
 
-// NewChecker creates a new Checker.
-func NewChecker(repo *Repository) *Checker {
+// newChecker creates a new Checker.
+func newChecker(repo *Repository) *Checker {
 	return &Checker{
 		repo: repo,
 	}
 }
 func computePackTypes(ctx context.Context, idx restic.ListBlobser) (map[restic.ID]restic.BlobType, error) {
 	packs := make(map[restic.ID]restic.BlobType)
-	err := idx.ListBlobs(ctx, func(pb restic.PackedBlob) {
-		tpe, exists := packs[pb.PackID]
+	err := idx.ListBlobs(ctx, func(pb restic.PackBlob) {
+		packID := pb.PackID()
+		h := pb.Handle()
+		tpe, exists := packs[packID]
 		if exists {
-			if pb.Type != tpe {
+			if h.Type != tpe {
 				tpe = restic.InvalidBlob
 			}
 		} else {
-			tpe = pb.Type
+			tpe = h.Type
 		}
-		packs[pb.PackID] = tpe
+		packs[packID] = tpe
 	})
 	return packs, err
 }
@@ -127,10 +128,11 @@ func (c *Checker) LoadIndex(ctx context.Context, p restic.TerminalCounterFactory
 			}
 			cnt++
 
-			if _, ok := packToIndex[blob.PackID]; !ok {
-				packToIndex[blob.PackID] = restic.NewIDSet()
+			packID := blob.PackID()
+			if _, ok := packToIndex[packID]; !ok {
+				packToIndex[packID] = restic.NewIDSet()
 			}
-			packToIndex[blob.PackID].Insert(id)
+			packToIndex[packID].Insert(id)
 		}
 
 		for pbs := range idx.EachByPack(ctx, restic.NewIDSet()) {
@@ -241,7 +243,7 @@ func (c *Checker) Packs(ctx context.Context, errChan chan<- error) {
 }
 
 // ReadPacks loads data from specified packs and checks the integrity.
-func (c *Checker) ReadPacks(ctx context.Context, filter func(packs map[restic.ID]int64) map[restic.ID]int64, p *progress.Counter, errChan chan<- error) {
+func (c *Checker) ReadPacks(ctx context.Context, filter func(packs map[restic.ID]int64) map[restic.ID]int64, p restic.Counter, errChan chan<- error) {
 	defer close(errChan)
 
 	// compute pack size using index entries
@@ -257,7 +259,7 @@ func (c *Checker) ReadPacks(ctx context.Context, filter func(packs map[restic.ID
 	type checkTask struct {
 		id    restic.ID
 		size  int64
-		blobs restic.Blobs
+		blobs pack.Blobs
 	}
 	ch := make(chan checkTask)
 
@@ -306,7 +308,7 @@ func (c *Checker) ReadPacks(ctx context.Context, filter func(packs map[restic.ID
 	}
 
 	// push packs to ch
-	for pbs := range c.repo.ListPacksFromIndex(ctx, packSet) {
+	for pbs := range c.repo.listPacksFromIndex(ctx, packSet) {
 		size := packs[pbs.PackID]
 		debug.Log("listed %v", pbs.PackID)
 		select {
@@ -327,7 +329,7 @@ func (c *Checker) ReadPacks(ctx context.Context, filter func(packs map[restic.ID
 }
 
 // checkPack reads a pack and checks the integrity of all blobs.
-func checkPack(ctx context.Context, r *Repository, id restic.ID, blobs restic.Blobs, size int64, bufRd *bufio.Reader, dec *zstd.Decoder) error {
+func checkPack(ctx context.Context, r *Repository, id restic.ID, blobs pack.Blobs, size int64, bufRd *bufio.Reader, dec *zstd.Decoder) error {
 	err := checkPackInner(ctx, r, id, blobs, size, bufRd, dec)
 	if err != nil {
 		if r.cache != nil {
@@ -346,7 +348,7 @@ func checkPack(ctx context.Context, r *Repository, id restic.ID, blobs restic.Bl
 	return err
 }
 
-func checkPackInner(ctx context.Context, r *Repository, id restic.ID, blobs restic.Blobs, size int64, bufRd *bufio.Reader, dec *zstd.Decoder) error {
+func checkPackInner(ctx context.Context, r *Repository, id restic.ID, blobs pack.Blobs, size int64, bufRd *bufio.Reader, dec *zstd.Decoder) error {
 
 	type partialReadError struct {
 		error
@@ -462,8 +464,8 @@ func checkPackInner(ctx context.Context, r *Repository, id restic.ID, blobs rest
 	for _, blob := range blobs {
 		// Check if blob is contained in index and position is correct
 		idxHas := false
-		for _, pb := range r.LookupBlob(blob.BlobHandle.Type, blob.BlobHandle.ID) {
-			if pb.PackID == id && pb.Blob == blob {
+		for _, pb := range r.idx.Lookup(blob.BlobHandle) {
+			if pb.PackID().Equal(id) && pb.Blob == blob {
 				idxHas = true
 				break
 			}

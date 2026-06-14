@@ -11,7 +11,7 @@ import (
 	"github.com/restic/restic/internal/backend/local"
 	"github.com/restic/restic/internal/backend/mem"
 	"github.com/restic/restic/internal/backend/retry"
-	"github.com/restic/restic/internal/crypto"
+	"github.com/restic/restic/internal/repository/crypto"
 	"github.com/restic/restic/internal/restic"
 	"github.com/restic/restic/internal/test"
 
@@ -158,16 +158,11 @@ func BenchmarkAllVersions(b *testing.B, bench VersionedBenchmark) {
 	}
 }
 
-func TestNewLock(_ *testing.T, repo *Repository, exclusive bool) (*restic.Lock, error) {
-	// TODO get rid of this test helper
-	return restic.NewLock(context.TODO(), &internalRepository{repo}, exclusive)
-}
-
 // TestCheckRepo runs the checker on repo.
 func TestCheckRepo(t testing.TB, repo *Repository) {
-	chkr := NewChecker(repo)
+	chkr := newChecker(repo)
 
-	hints, errs := chkr.LoadIndex(context.TODO(), nil)
+	hints, errs := chkr.LoadIndex(context.TODO(), restic.NoopTerminalCounterFactory)
 	if len(errs) != 0 {
 		t.Fatalf("errors loading index: %v", errs)
 	}
@@ -188,7 +183,7 @@ func TestCheckRepo(t testing.TB, repo *Repository) {
 	errChan = make(chan error)
 	go chkr.ReadPacks(context.TODO(), func(packs map[restic.ID]int64) map[restic.ID]int64 {
 		return packs
-	}, nil, errChan)
+	}, restic.NoopCounter, errChan)
 
 	for err := range errChan {
 		t.Error(err)

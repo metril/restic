@@ -13,7 +13,6 @@ import (
 	"github.com/restic/restic/internal/errors"
 	"github.com/restic/restic/internal/fs"
 	"github.com/restic/restic/internal/restic"
-	"github.com/restic/restic/internal/ui/progress"
 	restoreui "github.com/restic/restic/internal/ui/restore"
 
 	"golang.org/x/sync/errgroup"
@@ -489,7 +488,7 @@ func (res *Restorer) removeUnexpectedFiles(ctx context.Context, target, location
 		panic("internal error")
 	}
 
-	entries, err := fs.Readdirnames(fs.Local{}, target, fs.O_NOFOLLOW)
+	entries, err := fs.Readdirnames(fs.NewLocal(), target, fs.O_NOFOLLOW)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	} else if err != nil {
@@ -621,7 +620,7 @@ const nVerifyWorkers = 8
 // have been successfully written to dst. It stops when it encounters an
 // error. It returns that error and the number of files it has successfully
 // verified.
-func (res *Restorer) VerifyFiles(ctx context.Context, dst string, countRestoredFiles uint64, p *progress.Counter) (int, error) {
+func (res *Restorer) VerifyFiles(ctx context.Context, dst string, countRestoredFiles uint64, p restic.Counter) (int, error) {
 	type mustCheck struct {
 		node *data.Node
 		path string

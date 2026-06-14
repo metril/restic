@@ -1,16 +1,18 @@
 package progress
 
-import "testing"
+import (
+	"github.com/restic/restic/internal/restic"
+)
 
 // A Printer can can return a new counter or print messages
 // at different log levels.
 // It must be safe to call its methods from concurrent goroutines.
 type Printer interface {
 	// NewCounter returns a new progress counter. It is not shown if --quiet or --json is specified.
-	NewCounter(description string) *Counter
+	NewCounter(description string) restic.Counter
 	// NewCounterTerminalOnly returns a new progress counter that is only shown if stdout points to a
 	// terminal. It is not shown if --quiet or --json is specified.
-	NewCounterTerminalOnly(description string) *Counter
+	NewCounterTerminalOnly(description string) restic.Counter
 
 	// E reports an error. This message is always printed to stderr.
 	// Appends a newline if not present.
@@ -34,72 +36,32 @@ type Printer interface {
 	VV(msg string, args ...interface{})
 }
 
-// NoopPrinter discards all messages
-type NoopPrinter struct{}
+// noopPrinter discards all messages.
+type noopPrinter struct{}
 
-var _ Printer = (*NoopPrinter)(nil)
+var _ Printer = (*noopPrinter)(nil)
 
-func (*NoopPrinter) NewCounter(_ string) *Counter {
-	return nil
+// NewNoopPrinter returns a Printer that discards all messages.
+func NewNoopPrinter() Printer {
+	return &noopPrinter{}
 }
 
-func (*NoopPrinter) NewCounterTerminalOnly(_ string) *Counter {
-	return nil
+func (*noopPrinter) NewCounter(_ string) restic.Counter {
+	return restic.NoopCounter
 }
 
-func (*NoopPrinter) E(_ string, _ ...interface{}) {}
-
-func (*NoopPrinter) S(_ string, _ ...interface{}) {}
-
-func (*NoopPrinter) PT(_ string, _ ...interface{}) {}
-
-func (*NoopPrinter) P(_ string, _ ...interface{}) {}
-
-func (*NoopPrinter) V(_ string, _ ...interface{}) {}
-
-func (*NoopPrinter) VV(_ string, _ ...interface{}) {}
-
-// TestPrinter prints messages during testing
-type TestPrinter struct {
-	t testing.TB
+func (*noopPrinter) NewCounterTerminalOnly(_ string) restic.Counter {
+	return restic.NoopCounter
 }
 
-func NewTestPrinter(t testing.TB) *TestPrinter {
-	return &TestPrinter{
-		t: t,
-	}
-}
+func (*noopPrinter) E(_ string, _ ...interface{}) {}
 
-var _ Printer = (*TestPrinter)(nil)
+func (*noopPrinter) S(_ string, _ ...interface{}) {}
 
-func (p *TestPrinter) NewCounter(_ string) *Counter {
-	return nil
-}
+func (*noopPrinter) PT(_ string, _ ...interface{}) {}
 
-func (p *TestPrinter) NewCounterTerminalOnly(_ string) *Counter {
-	return nil
-}
+func (*noopPrinter) P(_ string, _ ...interface{}) {}
 
-func (p *TestPrinter) E(msg string, args ...interface{}) {
-	p.t.Logf("error: "+msg, args...)
-}
+func (*noopPrinter) V(_ string, _ ...interface{}) {}
 
-func (p *TestPrinter) S(msg string, args ...interface{}) {
-	p.t.Logf("stdout: "+msg, args...)
-}
-
-func (p *TestPrinter) PT(msg string, args ...interface{}) {
-	p.t.Logf("stdout(terminal): "+msg, args...)
-}
-
-func (p *TestPrinter) P(msg string, args ...interface{}) {
-	p.t.Logf("print: "+msg, args...)
-}
-
-func (p *TestPrinter) V(msg string, args ...interface{}) {
-	p.t.Logf("verbose: "+msg, args...)
-}
-
-func (p *TestPrinter) VV(msg string, args ...interface{}) {
-	p.t.Logf("verbose2: "+msg, args...)
-}
+func (*noopPrinter) VV(_ string, _ ...interface{}) {}

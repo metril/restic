@@ -63,11 +63,13 @@ func testRunKeyAddNewKeyUserHost(t testing.TB, gopts global.Options) {
 	rtest.OK(t, err)
 
 	_ = withTermStatus(t, gopts, func(ctx context.Context, gopts global.Options) error {
-		repo, err := global.OpenRepository(ctx, gopts, &progress.NoopPrinter{})
+		repo, err := global.OpenRepository(ctx, gopts, progress.NewNoopPrinter())
 		rtest.OK(t, err)
-		key, err := repository.SearchKey(ctx, repo, testKeyNewPassword, 2, "")
+		err = repo.SearchKey(ctx, testKeyNewPassword, 2, "")
 		rtest.OK(t, err)
 
+		key, err := repository.LoadKey(ctx, repo, repo.KeyID())
+		rtest.OK(t, err)
 		rtest.Equals(t, "john", key.Username)
 		rtest.Equals(t, "example.com", key.Hostname)
 		return nil
@@ -105,11 +107,13 @@ func testRunKeyPasswdUserHost(t testing.TB, newPassword string, gopts global.Opt
 
 	gopts.Password = testKeyNewPassword
 	_ = withTermStatus(t, gopts, func(ctx context.Context, gopts global.Options) error {
-		repo, err := global.OpenRepository(ctx, gopts, &progress.NoopPrinter{})
+		repo, err := global.OpenRepository(ctx, gopts, progress.NewNoopPrinter())
 		rtest.OK(t, err)
-		key, err := repository.SearchKey(ctx, repo, testKeyNewPassword, 1, "")
+		err = repo.SearchKey(ctx, testKeyNewPassword, 1, "")
 		rtest.OK(t, err)
 
+		key, err := repository.LoadKey(ctx, repo, repo.KeyID())
+		rtest.OK(t, err)
 		rtest.Equals(t, "john", key.Username)
 		rtest.Equals(t, "example.com", key.Hostname)
 		return nil

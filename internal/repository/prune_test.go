@@ -41,10 +41,10 @@ func testPrune(t *testing.T, opts repository.PruneOptions, errOnUnused bool) {
 			usedBlobs.Insert(blob)
 		}
 		return nil
-	}, &progress.NoopPrinter{})
+	}, progress.NewNoopPrinter())
 	rtest.OK(t, err)
 
-	rtest.OK(t, plan.Execute(context.TODO(), &progress.NoopPrinter{}))
+	rtest.OK(t, plan.Execute(context.TODO(), progress.NewNoopPrinter()))
 
 	repo = repository.TestOpenBackend(t, be)
 	repository.TestCheckRepo(t, repo)
@@ -153,7 +153,7 @@ func TestPruneSmall(t *testing.T) {
 
 	// and reopen repository with default packsize
 	repo = repository.TestOpenBackend(t, be)
-	rtest.OK(t, repo.LoadIndex(context.TODO(), nil))
+	rtest.OK(t, repo.LoadIndex(context.TODO(), restic.NoopTerminalCounterFactory))
 
 	opts := repository.PruneOptions{
 		MaxRepackBytes: math.MaxUint64,
@@ -165,9 +165,9 @@ func TestPruneSmall(t *testing.T) {
 			usedBlobs.Insert(blob)
 		}
 		return nil
-	}, &progress.NoopPrinter{})
+	}, progress.NewNoopPrinter())
 	rtest.OK(t, err)
-	rtest.OK(t, plan.Execute(context.TODO(), &progress.NoopPrinter{}))
+	rtest.OK(t, plan.Execute(context.TODO(), progress.NewNoopPrinter()))
 
 	stats := plan.Stats()
 	rtest.Equals(t, stats.Size.Used/blobSize, uint64(numBlobsCreated), fmt.Sprintf("total size of blobs should be %d but is %d",

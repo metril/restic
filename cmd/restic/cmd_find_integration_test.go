@@ -12,7 +12,7 @@ import (
 	"github.com/restic/restic/internal/global"
 	"github.com/restic/restic/internal/restic"
 	rtest "github.com/restic/restic/internal/test"
-	"github.com/restic/restic/internal/ui"
+	"github.com/restic/restic/internal/ui/progress"
 )
 
 func testRunFind(t testing.TB, wantJSON bool, opts FindOptions, gopts global.Options, pattern string) []byte {
@@ -169,7 +169,7 @@ func TestFindPackfile(t *testing.T) {
 
 	// do all the testing wrapped inside withTermStatus()
 	err := withTermStatus(t, env.gopts, func(ctx context.Context, gopts global.Options) error {
-		printer := ui.NewProgressPrinter(gopts.JSON, gopts.Verbosity, gopts.Term)
+		printer := progress.NewTerminalPrinter(gopts.JSON, gopts.Verbosity, gopts.Term)
 		_, repo, unlock, err := openWithReadLock(ctx, gopts, false, printer)
 		rtest.OK(t, err)
 		defer unlock()
@@ -179,9 +179,10 @@ func TestFindPackfile(t *testing.T) {
 
 		packID := restic.ID{}
 		done := false
-		err = repo.ListBlobs(ctx, func(pb restic.PackedBlob) {
-			if !done && pb.Type == restic.TreeBlob {
-				packID = pb.PackID
+		err = repo.ListBlobs(ctx, func(pb restic.PackBlob) {
+			h := pb.Handle()
+			if !done && h.Type == restic.TreeBlob {
+				packID = pb.PackID()
 				done = true
 			}
 		})
@@ -228,20 +229,20 @@ func TestFindPackID(t *testing.T) {
 	dataPackID := restic.ID{}
 	treePackID := restic.ID{}
 	err = withTermStatus(t, env.gopts, func(ctx context.Context, gopts global.Options) error {
-		printer := ui.NewProgressPrinter(gopts.JSON, gopts.Verbosity, gopts.Term)
+		printer := progress.NewTerminalPrinter(gopts.JSON, gopts.Verbosity, gopts.Term)
 		_, repo, unlock, err := openWithReadLock(ctx, gopts, false, printer)
 		rtest.OK(t, err)
 		defer unlock()
 
 		// load Index
-		rtest.OK(t, repo.LoadIndex(ctx, nil))
+		rtest.OK(t, repo.LoadIndex(ctx, restic.NoopTerminalCounterFactory))
 		// go through all index entries and collect data and tree packfile(s)
-		rtest.OK(t, repo.ListBlobs(ctx, func(blob restic.PackedBlob) {
-			switch blob.Type {
+		rtest.OK(t, repo.ListBlobs(ctx, func(blob restic.PackBlob) {
+			switch blob.Handle().Type {
 			case restic.DataBlob:
-				dataPackID = blob.PackID
+				dataPackID = blob.PackID()
 			case restic.TreeBlob:
-				treePackID = blob.PackID
+				treePackID = blob.PackID()
 			}
 		}))
 		return nil

@@ -19,6 +19,7 @@ import (
 	"github.com/restic/restic/internal/global"
 	"github.com/restic/restic/internal/restic"
 	"github.com/restic/restic/internal/ui"
+	"github.com/restic/restic/internal/ui/progress"
 	"github.com/restic/restic/internal/walker"
 )
 
@@ -472,18 +473,18 @@ func (f *Finder) packsToBlobs(ctx context.Context, packs []string) error {
 			delete(packIDs, idStr)
 		}
 		debug.Log("Found pack %s", idStr)
-		blobs, err := f.repo.ListPack(ctx, id, size)
+		handles, err := f.repo.ListPackHandles(ctx, id, size)
 		if err != nil {
 			return err
 		}
-		for _, b := range blobs {
-			switch b.Type {
+		for _, h := range handles {
+			switch h.Type {
 			case restic.DataBlob:
-				f.blobIDs[b.ID.String()] = struct{}{}
+				f.blobIDs[h.ID.String()] = struct{}{}
 			case restic.TreeBlob:
-				f.treeIDs[b.ID.String()] = struct{}{}
+				f.treeIDs[h.ID.String()] = struct{}{}
 			default:
-				panic(fmt.Sprintf("unknown type %v in blob list", b.Type.String()))
+				panic(fmt.Sprintf("unknown type %v in blob list", h.Type.String()))
 			}
 		}
 		// Stop searching when all packs have been found
@@ -525,22 +526,23 @@ func (f *Finder) indexPacksToBlobs(ctx context.Context, packIDs map[string]struc
 
 	// remember which packs were found in the index
 	indexPackIDs := make(map[string]struct{})
-	err := f.repo.ListBlobs(wctx, func(pb restic.PackedBlob) {
-		idStr := pb.PackID.String()
+	err := f.repo.ListBlobs(wctx, func(pb restic.PackBlob) {
+		packID := pb.PackID()
+		idStr := packID.String()
 		// keep entry in packIDs as Each() returns individual index entries
 		matchingID := false
 		if _, ok := packIDs[idStr]; ok {
 			matchingID = true
 		} else {
-			if _, ok := packIDs[pb.PackID.Str()]; ok {
+			if _, ok := packIDs[packID.Str()]; ok {
 				// expand id
-				delete(packIDs, pb.PackID.Str())
+				delete(packIDs, packID.Str())
 				packIDs[idStr] = struct{}{}
 				matchingID = true
 			}
 		}
 		if matchingID {
-			f.blobIDs[pb.ID.String()] = struct{}{}
+			f.blobIDs[pb.Handle().ID.String()] = struct{}{}
 			indexPackIDs[idStr] = struct{}{}
 		}
 	})
@@ -576,9 +578,9 @@ func (f *Finder) findObjectPack(id string, t restic.BlobType) {
 	}
 
 	for _, b := range blobs {
-		if b.ID.Equal(rid) {
-			f.printer.S("Object belongs to pack %s", b.PackID)
-			f.printer.S(" ... Pack %s: %s", b.PackID.Str(), b.String())
+		if b.Handle().ID.Equal(rid) {
+			f.printer.S("Object belongs to pack %s", b.PackID())
+			f.printer.S(" ... Pack %s: %v", b.PackID().String(), b.Handle())
 			break
 		}
 	}
@@ -599,7 +601,7 @@ func runFind(ctx context.Context, opts FindOptions, gopts global.Options, args [
 		return errors.Fatal("wrong number of arguments")
 	}
 
-	printer := ui.NewProgressPrinter(gopts.JSON, gopts.Verbosity, term)
+	printer := progress.NewTerminalPrinter(gopts.JSON, gopts.Verbosity, term)
 
 	var err error
 	pat := findPattern{pattern: args}
