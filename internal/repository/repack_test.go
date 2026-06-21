@@ -10,7 +10,6 @@ import (
 	"github.com/restic/restic/internal/repository"
 	"github.com/restic/restic/internal/restic"
 	rtest "github.com/restic/restic/internal/test"
-	"github.com/restic/restic/internal/ui/progress"
 )
 
 func randomSize(random *rand.Rand, min, max int) int {
@@ -117,7 +116,7 @@ func listPacks(t *testing.T, repo restic.Lister) restic.IDSet {
 	return listFiles(t, repo, restic.PackFile)
 }
 
-func listFiles(t *testing.T, repo restic.Lister, tpe backend.FileType) restic.IDSet {
+func listFiles(t *testing.T, repo restic.Lister, tpe restic.FileType) restic.IDSet {
 	list := restic.NewIDSet()
 	err := repo.List(context.TODO(), tpe, func(id restic.ID, size int64) error {
 		list.Insert(id)
@@ -154,14 +153,14 @@ func repack(t *testing.T, repo *repository.Repository, be backend.Backend, packs
 	}))
 
 	for id := range packs {
-		rtest.OK(t, be.Remove(context.TODO(), backend.Handle{Type: restic.PackFile, Name: id.String()}))
+		rtest.OK(t, be.Remove(context.TODO(), backend.Handle{Type: backend.PackFile, Name: id.String()}))
 	}
 }
 
 func rebuildAndReloadIndex(t *testing.T, repo *repository.Repository) {
 	rtest.OK(t, repository.RepairIndex(context.TODO(), repo, repository.RepairIndexOptions{
 		ReadAllPacks: true,
-	}, progress.NewNoopPrinter()))
+	}, restic.NewNoopPrinter()))
 
 	rtest.OK(t, repo.LoadIndex(context.TODO(), restic.NoopTerminalCounterFactory))
 }
