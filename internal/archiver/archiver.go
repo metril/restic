@@ -129,6 +129,9 @@ type Archiver struct {
 
 	// Flags controlling change detection. See doc/040_backup.rst for details.
 	ChangeIgnoreFlags uint
+
+	// for excluded items
+	ExcludedItem func(path string)
 }
 
 // Flags for the ChangeIgnoreFlags bitfield.
@@ -183,6 +186,7 @@ func New(repo archiverRepo, filesystem fs.FS, opts Options) *Archiver {
 		CompleteItem: func(string, ItemAction, ItemStats, time.Duration) {},
 		StartFile:    func(string) {},
 		CompleteBlob: func(uint64) {},
+		ExcludedItem: func(string) {},
 	}
 
 	return arch
@@ -315,11 +319,19 @@ func (arch *Archiver) saveDir(ctx context.Context, snPath string, dir string, me
 	finder := data.NewTreeFinder(previous)
 	defer finder.Close()
 
+	var lastExcluded string
+
 	for _, name := range names {
 		// test if context has been cancelled
 		if ctx.Err() != nil {
 			debug.Log("context has been cancelled, aborting")
 			return futureNode{}, ctx.Err()
+		}
+
+		if name == lastExcluded {
+			// Skip duplicate directory entry if it was already excluded.
+			// This avoids printing errors about duplicate directory entries even though the entry in question is ignored.
+			continue
 		}
 
 		pathname := arch.FS.Join(dir, name)
@@ -343,6 +355,7 @@ func (arch *Archiver) saveDir(ctx context.Context, snPath string, dir string, me
 		}
 
 		if excluded {
+			lastExcluded = name
 			continue
 		}
 
@@ -472,6 +485,7 @@ func (arch *Archiver) save(ctx context.Context, snPath, target string, previous 
 	// exclude files by path before running Lstat to reduce number of lstat calls
 	if !explicit && !arch.SelectByName(abstarget) {
 		debug.Log("%v is excluded by path", target)
+		arch.ExcludedItem(abstarget)
 		return futureNode{}, true, nil
 	}
 
@@ -500,6 +514,7 @@ func (arch *Archiver) save(ctx context.Context, snPath, target string, previous 
 	}
 	if !explicit && !arch.Select(abstarget, fi, arch.FS) {
 		debug.Log("%v is excluded", target)
+		arch.ExcludedItem(abstarget)
 		return futureNode{}, true, nil
 	}
 
